@@ -28,13 +28,8 @@ export interface TeamMember {
 /**
  * Configuration for the manager agent
  */
-export interface ManagerConfig {
-  /** Unique identifier for the manager (e.g., "Morgan#1") */
-  id: string;
-  /** System prompt for the manager */
-  systemPrompt: string;
-  /** Domain-specific tools available to the manager (coordination tools added automatically) */
-  tools?: Record<string, Tool>;
+export interface ManagerConfig extends TeamMember {
+  role: "manager";
 }
 
 /**
@@ -232,47 +227,26 @@ export interface AgentTeam {
   /** Unique team identifier */
   readonly teamId: string;
 
-  /** Current team state */
-  readonly state: AgentTeamState;
-
-  /** Whether the goal has been completed */
-  isGoalComplete(): boolean;
+  /**
+   * Run the team autonomously until the goal is complete or blocked
+   * Returns when goal is complete or agents are blocked waiting for external input
+   */
+  run(): Promise<{
+    complete: boolean;
+    blockedAgents: Array<{ agentId: string; messageId: string }>;
+    iterations: number;
+  }>;
 
   /**
-   * Run an agent (manager or team member)
-   * The agent will work on their current task or process messages
+   * Stop the team run loop gracefully
+   * Returns a promise that resolves with the current state when actually stopped
+   * The returned state can be used to resume the team later
    */
-  runAgent(agentId: string): Promise<AgentRunResult>;
-
-  /**
-   * Get the next work items that need to be done
-   * Returns agents with active tasks that haven't been started
-   */
-  getNextWork(): WorkItem[];
-
-  /**
-   * Get agents that are blocked and which messages they're waiting for
-   */
-  getBlockedAgents(): Array<{ agentId: string; messageId: string }>;
+  stop(): Promise<AgentTeamState>;
 
   /**
    * Deliver a message reply to resume a blocked agent
-   * Returns the agent ID that should be resumed
+   * Call this to answer questions from agents, then call run() again to continue
    */
-  deliverMessageReply(messageId: string, replyContent: string): string | null;
-
-  /**
-   * Get the current state of an agent
-   */
-  getAgentState(agentId: string): AgentState | undefined;
-
-  /**
-   * Get a task by ID
-   */
-  getTask(taskId: string): Task | undefined;
-
-  /**
-   * Get all tasks for a specific agent
-   */
-  getAgentTasks(agentId: string): Task[];
+  deliverMessageReply(messageId: string, replyContent: string): void;
 }

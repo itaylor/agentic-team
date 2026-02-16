@@ -25,6 +25,7 @@ describe("Agent Team Integration Tests", () => {
         modelConfig: TEST_MODEL_CONFIG,
         manager: {
           id: "Manager#1",
+          role: "manager",
           systemPrompt: `You are a project manager coordinating a small team.
 Your goal is to complete: "Write a two-line poem about coding"
 
@@ -67,65 +68,30 @@ When done, call task_complete with your work.`,
         },
       });
 
-      console.log("\n=== Step 1: Manager assigns work ===");
-      const managerResult1 = await team.runAgent("Manager#1");
-      console.log(`Manager result: ${managerResult1.completionReason}`);
+      console.log("\n=== Running team autonomously ===");
+      const result = await team.run();
 
-      // Manager should have assigned at least one task
-      assert.ok(
-        team.state.tasks.length > 0,
-        "Manager should have created tasks",
-      );
-      console.log(`Tasks created: ${team.state.tasks.length}`);
+      console.log(`\nTeam run complete:`);
+      console.log(`  Goal complete: ${result.complete}`);
+      console.log(`  Iterations: ${result.iterations}`);
+      console.log(`  Blocked agents: ${result.blockedAgents.length}`);
+      console.log(`  Events: ${events.join(", ")}`);
 
-      // Get work for team members
-      const workItems = team.getNextWork();
-      console.log(`Work items available: ${workItems.length}`);
-      assert.ok(workItems.length > 0, "Should have work items for team");
+      // Verify goal was completed
+      assert.ok(result.complete, "Goal should be completed");
 
-      console.log("\n=== Step 2: Worker completes task ===");
-      for (const work of workItems) {
-        console.log(`Running ${work.agentId} on task ${work.taskId}...`);
-        const result = await team.runAgent(work.agentId);
-        console.log(`${work.agentId} result: ${result.completionReason}`);
-      }
-
-      // Check that at least one task was completed
-      const completedTasks = team.state.tasks.filter(
-        (t) => t.status === "completed",
-      );
-      console.log(`Completed tasks: ${completedTasks.length}`);
-
-      console.log("\n=== Step 3: Manager checks completion ===");
-      const managerResult2 = await team.runAgent("Manager#1");
-      console.log(`Manager result: ${managerResult2.completionReason}`);
-
-      // Either goal is complete, or we're making progress
-      console.log(`\nGoal complete: ${team.isGoalComplete()}`);
-      console.log(`Events: ${events.join(", ")}`);
-
-      // Basic assertions
-      assert.ok(team.state.tasks.length > 0, "Should have created tasks");
+      // Verify we got the expected events
       assert.ok(
         events.some((e) => e.startsWith("task_created")),
         "Should have created tasks",
       );
+      assert.ok(
+        events.some((e) => e.startsWith("task_completed")),
+        "Should have completed tasks",
+      );
+      assert.ok(events.includes("goal_complete"), "Should have completed goal");
 
-      // If goal is complete, verify
-      if (team.isGoalComplete()) {
-        assert.ok(
-          events.includes("goal_complete"),
-          "Should have goal_complete event",
-        );
-        console.log("\n✨ Test passed - goal completed!");
-      } else {
-        console.log("\n⚠️  Goal not complete yet, but progress was made");
-        // Still pass the test if we made progress
-        assert.ok(
-          completedTasks.length > 0 || team.state.tasks.length > 0,
-          "Should have made progress",
-        );
-      }
+      console.log("\n✨ Test passed - goal completed autonomously!");
     });
   });
 });

@@ -1,7 +1,7 @@
 // Agent team coordinator - manages a team of agents working toward a goal
 
 import { runAgentSession } from "@waterfell/agentic-loop";
-import type { SessionSuspendInfo } from "@waterfell/agentic-loop";
+import type { AgentSession, SessionSuspendInfo } from "@waterfell/agentic-loop";
 import type { Tool } from "ai";
 import { z } from "zod";
 import type {
@@ -498,170 +498,187 @@ export function createAgentTeam(config: AgentTeamConfig): AgentTeam {
     logger.info(`Agent ${agentId} blocked waiting for message ${messageId}`);
   }
 
+  // Internal helper functions for run loop
+  let shouldStop = false;
+  let stopResolver: ((state: AgentTeamState) => void) | undefined = undefined;
+  const activeAgentSessions: Set<AgentSession> = new Set(); // Track all active agent sessions
+
+  function getBlockedAgents(): Array<{ agentId: string; messageId: string }> {
+    const blocked: Array<{ agentId: string; messageId: string }> = [];
+    for (const [agentId, agentState] of state.agentStates) {
+      if (agentState.status === "blocked" && agentState.blockedOn) {
+        blocked.push({
+          agentId,
+          messageId: agentState.blockedOn,
+        });
+      }
+    }
+    return blocked;
+  }
+
+  function getNextWork(): WorkItem[] {
+    const workItems: WorkItem[] = [];
+    for (const [agentId, agentState] of state.agentStates) {
+      if (agentState.status === "blocked" || !agentState.currentTask) {
+        continue;
+      }
+      const task = state.tasks.find((t) => t.id === agentState.currentTask);
+      if (task && task.status === "active") {
+        workItems.push({
+          agentId,
+          taskId: task.id,
+          task,
+        });
+      }
+    }
+    return workItems;
+  }
+
   // The AgentTeam interface implementation
   const team: AgentTeam = {
     teamId: config.teamId,
-    state,
 
-    isGoalComplete(): boolean {
-      return state.goalComplete;
-    },
+    async run(): Promise<{
+      complete: boolean;
+      blockedAgents: Array<{ agentId: string; messageId: string }>;
+      iterations: number;
+    }> {
+      shouldStop = false;
+      const maxIterations = 100;
+      let iterations = 0;
 
-    async runAgent(agentId: string): Promise<AgentRunResult> {
-      const agentState = state.agentStates.get(agentId);
-      if (!agentState) {
-        throw new Error(`Agent ${agentId} not found`);
+      logger.info(`Starting autonomous team run for goal: ${config.goal}`);
+
+      // Start with the manager
+      logger.info("Running manager to assign work...");
+      await runAgent(config.manager.id);
+
+      // Main loop
+      while (iterations < maxIterations && !state.goalComplete && !shouldStop) {
+        iterations++;
+        logger.info(`\n=== Iteration ${iterations} ===`);
+
+        // Check for blocked agents (waiting for external input)
+        const blocked = getBlockedAgents();
+        if (blocked.length > 0) {
+          const externalBlocked = blocked.filter((b) => {
+            const msg = state.messages.find((m) => m.id === b.messageId);
+            return (
+              msg && (msg.to === "BigBoss" || !state.agentStates.has(msg.to))
+            );
+          });
+
+          if (externalBlocked.length > 0) {
+            logger.info(
+              `Agents blocked on external input: ${externalBlocked.map((b) => b.agentId).join(", ")}`,
+            );
+            return {
+              complete: false,
+              blockedAgents: externalBlocked,
+              iterations,
+            };
+          }
+        }
+
+        // Get work items for team members
+        const workItems = getNextWork();
+
+        if (workItems.length === 0 && blocked.length === 0) {
+          // No work and no blocked agents - check if manager needs to run
+          const managerState = state.agentStates.get(config.manager.id);
+          if (managerState && managerState.status !== "blocked") {
+            logger.info("No work items, running manager to check status...");
+            const managerResult = await runAgent(config.manager.id);
+
+            if (managerResult.completionReason === "task_complete") {
+              // Manager completed the goal
+              break;
+            }
+
+            // If manager still found no work, we might be stuck
+            const workItemsAfter = getNextWork();
+            if (
+              workItemsAfter.length === 0 &&
+              getBlockedAgents().length === 0
+            ) {
+              logger.info("No work and no blocked agents - ending run");
+              break;
+            }
+          } else {
+            logger.info("No work and manager is blocked - ending run");
+            break;
+          }
+        }
+
+        // Run all agents with work
+        for (const work of workItems) {
+          if (shouldStop) break;
+          logger.info(`Running ${work.agentId} on task ${work.taskId}...`);
+          await runAgent(work.agentId);
+
+          // Check if goal completed
+          if (state.goalComplete) {
+            break;
+          }
+        }
+
+        // After agents complete tasks, run manager to process notifications
+        if (!state.goalComplete && !shouldStop) {
+          const managerState = state.agentStates.get(config.manager.id);
+          if (managerState && managerState.status !== "blocked") {
+            logger.info("Running manager to process completions...");
+            await runAgent(config.manager.id);
+          }
+        }
       }
 
-      // Find agent config
-      const isManager = agentId === config.manager.id;
-      const agentConfig = isManager
-        ? config.manager
-        : config.team.find((m) => m.id === agentId);
-
-      if (!agentConfig) {
-        throw new Error(`Agent configuration not found for ${agentId}`);
+      if (shouldStop) {
+        logger.info("Team run stopped by user");
+        if (stopResolver) {
+          const resolver = stopResolver;
+          stopResolver = undefined;
+          resolver(state);
+        }
+      } else if (iterations >= maxIterations) {
+        logger.info(`Reached max iterations (${maxIterations})`);
       }
 
-      // Build coordination tools
-      const coordinationTools = createCoordinationTools(agentId);
+      logger.info(
+        `Team run complete. Goal complete: ${state.goalComplete}, Iterations: ${iterations}`,
+      );
 
-      // Merge with domain tools
-      const allTools = {
-        ...coordinationTools,
-        ...(agentConfig.tools || {}),
+      return {
+        complete: state.goalComplete,
+        blockedAgents: getBlockedAgents(),
+        iterations,
       };
-
-      // Build initial message if this is a fresh session
-      const initialMessage =
-        agentState.conversationHistory.length === 0
-          ? buildInitialMessage(agentId)
-          : undefined;
-
-      logger.info(`Running agent ${agentId}...`);
-
-      try {
-        // Run the agent session (returns AgentSession which is awaitable)
-        const result = await runAgentSession(config.modelConfig, {
-          sessionId: agentId,
-          systemPrompt: agentConfig.systemPrompt,
-          tools: allTools,
-          initialMessages: agentState.conversationHistory,
-          initialMessage,
-          maxTurns: config.maxTurnsPerSession,
-          tokenLimit: config.tokenLimit,
-          logger,
-          callbacks: {
-            onSuspend: async (sessionId: string, info: SessionSuspendInfo) => {
-              const messageId = info.data?.messageId;
-              if (messageId) {
-                await handleAgentSuspension(agentId, messageId);
-              }
-            },
-            onMessagesUpdate: async (
-              sessionId: string,
-              messages: Message[],
-            ) => {
-              // Update agent's conversation history
-              agentState.conversationHistory = messages;
-            },
-          },
-        });
-
-        // Update conversation history
-        agentState.conversationHistory = result.messages;
-
-        // Handle different completion reasons
-        if (result.completionReason === "suspended") {
-          return {
-            agentId,
-            suspended: true,
-            suspendInfo: result.suspendInfo,
-            finalOutput: result.finalOutput,
-            completionReason: "suspended",
-          };
-        }
-
-        if (result.completionReason === "task_complete") {
-          await handleTaskCompletion(agentId, result.finalOutput);
-          return {
-            agentId,
-            completed: true,
-            finalOutput: result.finalOutput,
-            completionReason: "task_complete",
-          };
-        }
-
-        // Other completion reasons (max_turns, error)
-        return {
-          agentId,
-          finalOutput: result.finalOutput,
-          completionReason: result.completionReason,
-        };
-      } catch (error) {
-        logger.error(`Error running agent ${agentId}:`, error);
-        return {
-          agentId,
-          finalOutput: "",
-          completionReason: "error",
-          error: error as Error,
-        };
-      }
     },
 
-    getNextWork(): WorkItem[] {
-      const workItems: WorkItem[] = [];
-
-      for (const [agentId, agentState] of state.agentStates) {
-        // Skip blocked agents and agents without tasks
-        if (agentState.status === "blocked" || !agentState.currentTask) {
-          continue;
-        }
-
-        const task = state.tasks.find((t) => t.id === agentState.currentTask);
-        if (task && task.status === "active") {
-          workItems.push({
-            agentId,
-            taskId: task.id,
-            task,
-          });
-        }
-      }
-
-      return workItems;
+    async stop(): Promise<AgentTeamState> {
+      logger.info("Stop requested");
+      shouldStop = true;
+      await Promise.all(
+        [...activeAgentSessions].map((session) => session.stop()),
+      );
+      return state;
     },
 
-    getBlockedAgents(): Array<{ agentId: string; messageId: string }> {
-      const blocked: Array<{ agentId: string; messageId: string }> = [];
-
-      for (const [agentId, agentState] of state.agentStates) {
-        if (agentState.status === "blocked" && agentState.blockedOn) {
-          blocked.push({
-            agentId,
-            messageId: agentState.blockedOn,
-          });
-        }
-      }
-
-      return blocked;
-    },
-
-    deliverMessageReply(
-      messageId: string,
-      replyContent: string,
-    ): string | null {
+    deliverMessageReply(messageId: string, replyContent: string): void {
       // Find the original message
       const originalMessage = state.messages.find((m) => m.id === messageId);
       if (!originalMessage || originalMessage.type !== "ask") {
-        return null;
+        logger.error(
+          `Cannot deliver reply - message ${messageId} not found or not an ask`,
+        );
+        return;
       }
 
       // Create reply message
       const replyId = generateMessageId(state.messages);
       const reply: TeamMessage = {
         id: replyId,
-        from: originalMessage.to, // Reply comes from the person being asked
-        to: originalMessage.from, // Goes to the person who asked
+        from: originalMessage.to,
+        to: originalMessage.from,
         type: "tell",
         content: replyContent,
         status: "delivered",
@@ -693,25 +710,117 @@ export function createAgentTeam(config: AgentTeamConfig): AgentTeam {
         logger.info(
           `Agent ${blockedAgentId} unblocked with reply to ${messageId}`,
         );
-
-        return blockedAgentId;
       }
-
-      return null;
-    },
-
-    getAgentState(agentId: string): AgentState | undefined {
-      return state.agentStates.get(agentId);
-    },
-
-    getTask(taskId: string): Task | undefined {
-      return state.tasks.find((t) => t.id === taskId);
-    },
-
-    getAgentTasks(agentId: string): Task[] {
-      return state.tasks.filter((t) => t.assignee === agentId);
     },
   };
+
+  // Internal function to run an agent
+  async function runAgent(agentId: string): Promise<AgentRunResult> {
+    const agentState = state.agentStates.get(agentId);
+    if (!agentState) {
+      throw new Error(`Agent ${agentId} not found`);
+    }
+
+    // Find agent config
+    const isManager = agentId === config.manager.id;
+    const agentConfig = isManager
+      ? config.manager
+      : config.team.find((m) => m.id === agentId);
+
+    if (!agentConfig) {
+      throw new Error(`Agent configuration not found for ${agentId}`);
+    }
+
+    // Build coordination tools
+    const coordinationTools = createCoordinationTools(agentId);
+
+    // Merge with domain tools
+    const allTools = {
+      ...coordinationTools,
+      ...(agentConfig.tools || {}),
+    };
+
+    // Build initial message if this is a fresh session
+    const initialMessage =
+      agentState.conversationHistory.length === 0
+        ? buildInitialMessage(agentId)
+        : undefined;
+
+    logger.info(`Running agent ${agentId}...`);
+
+    try {
+      // Run the agent session (returns AgentSession which is awaitable)
+      const session = runAgentSession(config.modelConfig, {
+        sessionId: agentId,
+        systemPrompt: agentConfig.systemPrompt,
+        tools: allTools,
+        initialMessages: agentState.conversationHistory,
+        initialMessage,
+        maxTurns: config.maxTurnsPerSession,
+        tokenLimit: config.tokenLimit,
+        logger,
+        callbacks: {
+          onSuspend: async (sessionId: string, info: SessionSuspendInfo) => {
+            const messageId = info.data?.messageId;
+            if (messageId) {
+              await handleAgentSuspension(agentId, messageId);
+            }
+          },
+          onMessagesUpdate: async (sessionId: string, messages: Message[]) => {
+            // Update agent's conversation history
+            agentState.conversationHistory = messages;
+          },
+        },
+      });
+
+      // Track this session
+      activeAgentSessions.add(session);
+
+      const result = await session;
+
+      // Remove from active sessions
+      activeAgentSessions.delete(session);
+
+      // Update conversation history
+      agentState.conversationHistory = result.messages;
+
+      // Handle different completion reasons
+      if (result.completionReason === "suspended") {
+        return {
+          agentId,
+          suspended: true,
+          suspendInfo: result.suspendInfo,
+          finalOutput: result.finalOutput,
+          completionReason: "suspended",
+        };
+      }
+
+      if (result.completionReason === "task_complete") {
+        await handleTaskCompletion(agentId, result.finalOutput);
+        return {
+          agentId,
+          completed: true,
+          finalOutput: result.finalOutput,
+          completionReason: "task_complete",
+        };
+      }
+
+      // Other completion reasons (max_turns, error)
+      return {
+        agentId,
+        finalOutput: result.finalOutput,
+        completionReason: result.completionReason,
+      };
+    } catch (error) {
+      logger.error(`Error running agent ${agentId}:`, error);
+      return {
+        agentId,
+        finalOutput: "",
+        completionReason: "error",
+        error: error as Error,
+      };
+    }
+  }
 
   return team;
 }

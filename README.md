@@ -38,6 +38,7 @@ const team = createAgentTeam({
   },
   manager: {
     id: 'Morgan#1',
+    role: 'manager',
     systemPrompt: 'You are a project manager. Break down the goal into tasks and assign them to your team.',
   },
   team: [
@@ -59,19 +60,11 @@ const team = createAgentTeam({
   }
 });
 
-// Run the manager to delegate work
-await team.runAgent('Morgan#1');
+// Run the team autonomously until goal is complete
+const result = await team.run();
 
-// Run team members on their assigned tasks
-const workItems = team.getNextWork();
-for (const work of workItems) {
-  await team.runAgent(work.agentId);
-}
-
-// Check if goal is complete
-if (team.isGoalComplete()) {
-  console.log('All done!');
-}
+console.log('Goal complete:', result.complete);
+console.log('Iterations:', result.iterations);
 ```
 
 ## Core Concepts
@@ -140,6 +133,14 @@ Creates a new agent team coordinator.
 ```
 
 **Returns:** `AgentTeam` object
+
+### `team.run()`
+
+Run the team autonomously until the goal is complete or agents are blocked waiting for external input (like BigBoss replies).
+
+**Returns:** `Promise<{ complete: boolean, blockedAgents: Array<{ agentId, messageId }>, iterations: number }>`
+
+This is the primary way to use the library - just call `run()` and the team coordinates itself automatically.
 
 ### `team.runAgent(agentId)`
 
@@ -251,7 +252,10 @@ const team = createAgentTeam({
   modelConfig: { provider: 'anthropic', model: 'claude-3-5-sonnet-20241022', apiKey: '...' },
   manager: {
     id: 'Morgan#1',
-    systemPrompt: 'You are an engineering manager...'
+    systemPrompt: `You are an engineering manager.
+Break down the goal into tasks and assign them using assign_task.
+After assigning all tasks, call wait_for_task_completions.
+When all tasks are done, call task_complete with a summary.`
   },
   team: [
     { id: 'Bailey#1', role: 'backend', systemPrompt: '...' },
@@ -259,71 +263,41 @@ const team = createAgentTeam({
   ]
 });
 
-// 1. Manager breaks down the goal and assigns tasks
-console.log('Running manager...');
-const managerResult = await team.runAgent('Morgan#1');
+// Run the team autonomously
+const result = await team.run();
 
-if (managerResult.completed) {
-  console.log('Manager completed goal immediately!');
-}
-
-// 2. Run team members on assigned tasks
-while (!team.isGoalComplete()) {
-  const workItems = team.getNextWork();
-  
-  if (workItems.length === 0) {
-    // Check for blocked agents
-    const blocked = team.getBlockedAgents();
-    if (blocked.length > 0) {
-      console.log('Agents are blocked waiting for replies:', blocked);
-      // In a real app, you'd wait for external replies (e.g., from BigBoss via UI)
-      break;
-    }
-    break;
-  }
-  
-  // Run each agent with work
-  for (const work of workItems) {
-    console.log(`Running ${work.agentId} on task ${work.taskId}...`);
-    const result = await team.runAgent(work.agentId);
-    
-    if (result.suspended) {
-      console.log(`${work.agentId} is blocked:`, result.suspendInfo);
-    } else if (result.completed) {
-      console.log(`${work.agentId} completed their task!`);
-    }
-  }
-  
-  // After agents complete tasks, run manager again to process notifications
-  console.log('Running manager to review completions...');
-  await team.runAgent('Morgan#1');
-}
-
-if (team.isGoalComplete()) {
+if (result.complete) {
   console.log('Goal complete!', team.state.goalSummary);
+  console.log('Completed in', result.iterations, 'iterations');
+} else if (result.blockedAgents.length > 0) {
+  console.log('Blocked on external input:', result.blockedAgents);
+  // Handle external questions (e.g., from BigBoss via UI)
+  // Then call team.run() again to resume
 }
 ```
 
 ## Handling External Communication
 
-When an agent asks an external entity (like "BigBoss"), you need to handle the reply:
+When an agent asks an external entity (like "BigBoss"), `team.run()` returns with blocked agents:
 
 ```typescript
-// Agent asks BigBoss
-const result = await team.runAgent('Bailey#1');
-if (result.suspended && result.suspendInfo?.data.to === 'BigBoss') {
-  const messageId = result.suspendInfo.data.messageId;
-  
-  // Get answer from human (via UI, CLI, etc.)
-  const humanAnswer = await promptHuman('Bailey asks: ' + message.content);
-  
-  // Deliver reply
-  const agentToResume = team.deliverMessageReply(messageId, humanAnswer);
-  
-  // Resume the agent
-  if (agentToResume) {
-    await team.runAgent(agentToResume);
+// Run team
+const result = await team.run();
+
+if (!result.complete && result.blockedAgents.length > 0) {
+  for (const blocked of result.blockedAgents) {
+    const message = team.state.messages.find(m => m.id === blocked.messageId);
+    if (message && message.to === 'BigBoss') {
+      // Get answer from human (via UI, CLI, etc.)
+      const humanAnswer = await promptHuman(message.content);
+      
+      // Deliver reply
+      team.deliverMessageReply(blocked.messageId, humanAnswer);
+    }
   }
+  
+  // Resume team
+  const resumedResult = await team.run();
 }
 ```
 
