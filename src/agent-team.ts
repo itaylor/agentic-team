@@ -873,6 +873,35 @@ export function createAgentTeam(config: AgentTeamConfig): AgentTeam {
           config.callbacks?.onMessageDelivered?.(msg);
         }
 
+        // For the manager, add task status context so it knows what action to take next
+        if (agentId === config.manager.id) {
+          const incompleteTasks = state.tasks.filter(
+            (t) => t.status === "active" || t.status === "queued",
+          );
+          const completedTasks = state.tasks.filter(
+            (t) => t.status === "completed",
+          );
+
+          if (incompleteTasks.length > 0) {
+            parts.push(`\n## Current Task Status`);
+            parts.push(
+              `Completed: ${completedTasks.length}, Remaining: ${incompleteTasks.length}`,
+            );
+            parts.push(
+              `Remaining: ${incompleteTasks.map((t) => `${t.id} "${t.title}" (${t.status})`).join(", ")}`,
+            );
+            parts.push(
+              `\nYou MUST call wait_for_task_completions now to continue waiting for the remaining tasks.`,
+            );
+          } else if (completedTasks.length > 0) {
+            parts.push(`\n## All Tasks Complete`);
+            parts.push(`All ${completedTasks.length} tasks are finished.`);
+            parts.push(
+              `\nReview the results above and call task_complete with a summary to finalize the goal.`,
+            );
+          }
+        }
+
         agentState.conversationHistory.push({
           role: "user",
           content: parts.join("\n"),
