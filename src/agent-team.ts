@@ -164,14 +164,59 @@ export function createAgentTeam(config: AgentTeamConfig): AgentTeam {
 
           state.messages.push(message);
 
-          // If this is a reply to an ask, mark the ask as delivered
+          // Find the ask this is replying to - either explicitly via inReplyTo,
+          // or auto-detect if the recipient has a pending ask from the sender
+          let originalAsk: TeamMessage | undefined;
           if (args.inReplyTo) {
-            const originalAsk = state.messages.find(
-              (m) => m.id === args.inReplyTo,
+            originalAsk = state.messages.find(
+              (m) => m.id === args.inReplyTo && m.type === "ask",
             );
-            if (originalAsk && originalAsk.type === "ask") {
-              originalAsk.status = "delivered";
-              await config.callbacks?.onMessageDelivered?.(originalAsk);
+          } else {
+            // Auto-detect: if the recipient is blocked waiting for a reply from this sender,
+            // treat this tell as the reply (LLMs often omit inReplyTo)
+            const recipientState = state.agentStates.get(args.to);
+            if (
+              recipientState &&
+              recipientState.status === "blocked" &&
+              recipientState.blockedOn
+            ) {
+              const pendingAsk = state.messages.find(
+                (m) =>
+                  m.id === recipientState.blockedOn &&
+                  m.type === "ask" &&
+                  m.from === args.to &&
+                  m.to === agentId,
+              );
+              if (pendingAsk) {
+                originalAsk = pendingAsk;
+                message.inReplyTo = pendingAsk.id;
+                logger.info(
+                  `Auto-matched tell from ${agentId} to ${args.to} as reply to ${pendingAsk.id}`,
+                );
+              }
+            }
+          }
+
+          if (originalAsk) {
+            originalAsk.status = "delivered";
+            await config.callbacks?.onMessageDelivered?.(originalAsk);
+
+            // Unblock the agent that sent the original ask
+            const askerState = state.agentStates.get(originalAsk.from);
+            if (askerState && askerState.blockedOn === originalAsk.id) {
+              askerState.status = askerState.currentTask ? "working" : "idle";
+              askerState.blockedOn = undefined;
+
+              // Add the reply to their conversation history so they see it when resumed
+              askerState.conversationHistory.push({
+                role: "user",
+                content: `Reply to your question from ${agentId}:\n\n${args.message}`,
+              });
+
+              await config.callbacks?.onAgentUnblocked?.(originalAsk.from);
+              logger.info(
+                `Agent ${originalAsk.from} unblocked by reply from ${agentId} to ${originalAsk.id}`,
+              );
             }
           }
 
@@ -442,7 +487,13 @@ export function createAgentTeam(config: AgentTeamConfig): AgentTeam {
     // Regular task completion
     const task = state.tasks.find((t) => t.id === agentState.currentTask);
     if (!task) {
-      throw new Error(`Agent ${agentId} has no current task`);
+      // Agent had no current task (e.g., was run to respond to messages).
+      // Treat as a graceful session end rather than an error.
+      logger.info(
+        `Agent ${agentId} called task_complete with no active task (likely finished responding to messages)`,
+      );
+      agentState.status = "idle";
+      return;
     }
 
     // Update task
@@ -467,7 +518,7 @@ export function createAgentTeam(config: AgentTeamConfig): AgentTeam {
       to: task.createdBy,
       type: "tell",
       content: `Task ${task.id} "${task.title}" completed:\n\n${task.completionSummary}`,
-      status: "delivered",
+      status: "pending",
       createdAt: new Date().toISOString(),
     };
     state.messages.push(notification);
@@ -482,6 +533,13 @@ export function createAgentTeam(config: AgentTeamConfig): AgentTeam {
       queuedTask.status = "active";
       agentState.currentTask = queuedTask.id;
       agentState.status = "working";
+
+      // Inject new task context into the agent's conversation so they know about it
+      agentState.conversationHistory.push({
+        role: "user",
+        content: `You have a new task assignment.\n\n# New Task: ${queuedTask.title}\nTask ID: ${queuedTask.id}\n\n${queuedTask.brief}\n\nPlease work on this task and call task_complete when done.`,
+      });
+
       await config.callbacks?.onTaskActivated?.(queuedTask);
       logger.info(`Task ${queuedTask.id} activated for ${agentId}`);
     }
@@ -542,6 +600,23 @@ export function createAgentTeam(config: AgentTeamConfig): AgentTeam {
     return workItems;
   }
 
+  /**
+   * Get agents that are idle but have pending messages they need to respond to.
+   */
+  function getAgentsWithPendingMessages(): string[] {
+    const agents: string[] = [];
+    for (const [agentId, agentState] of state.agentStates) {
+      if (agentState.status === "blocked") continue;
+      const hasPending = state.messages.some(
+        (m) => m.to === agentId && m.status === "pending",
+      );
+      if (hasPending) {
+        agents.push(agentId);
+      }
+    }
+    return agents;
+  }
+
   // The AgentTeam interface implementation
   const team: AgentTeam = {
     teamId: config.teamId,
@@ -590,6 +665,28 @@ export function createAgentTeam(config: AgentTeamConfig): AgentTeam {
 
         // Get work items for team members
         const workItems = getNextWork();
+
+        // If no work items but there are internally blocked agents,
+        // check if any idle agents have pending messages they need to respond to
+        if (workItems.length === 0 && blocked.length > 0) {
+          const agentsWithMessages = getAgentsWithPendingMessages();
+          if (agentsWithMessages.length > 0) {
+            for (const responderId of agentsWithMessages) {
+              if (shouldStop) break;
+              logger.info(
+                `Running ${responderId} to respond to pending messages...`,
+              );
+              await runAgent(responderId);
+            }
+            continue; // Re-evaluate loop state after running responders
+          } else {
+            // All blocked agents are internal, no one can respond - stuck
+            logger.info(
+              "No work and agents internally blocked with no responders - ending run",
+            );
+            break;
+          }
+        }
 
         if (workItems.length === 0 && blocked.length === 0) {
           // No work and no blocked agents - check if manager needs to run
@@ -755,6 +852,33 @@ export function createAgentTeam(config: AgentTeamConfig): AgentTeam {
       agentState.conversationHistory.length === 0
         ? buildInitialMessage(agentId)
         : undefined;
+
+    // For agents with existing history, inject any pending messages into their conversation
+    if (agentState.conversationHistory.length > 0) {
+      const pendingMessages = state.messages.filter(
+        (m) => m.to === agentId && m.status === "pending",
+      );
+
+      if (pendingMessages.length > 0) {
+        const parts: string[] = ["# Pending Messages"];
+        for (const msg of pendingMessages) {
+          if (msg.type === "ask") {
+            parts.push(
+              `\nFrom ${msg.from} (message ${msg.id}):\n**Question:** ${msg.content}\nPlease reply using the tell tool with to="${msg.from}" and inReplyTo="${msg.id}".`,
+            );
+          } else {
+            parts.push(`\nFrom ${msg.from}:\n${msg.content}`);
+          }
+          msg.status = "delivered";
+          config.callbacks?.onMessageDelivered?.(msg);
+        }
+
+        agentState.conversationHistory.push({
+          role: "user",
+          content: parts.join("\n"),
+        });
+      }
+    }
 
     logger.info(`Running agent ${agentId}...`);
 
