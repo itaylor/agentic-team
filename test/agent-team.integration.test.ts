@@ -10,6 +10,7 @@ import type {
   AgentTeamState,
   Logger,
 } from "../src/types.js";
+import { createTestFileLogger } from "./test-helpers.js";
 
 // Use local Ollama for testing
 const TEST_MODEL_CONFIG: ModelConfig = {
@@ -20,34 +21,17 @@ const TEST_MODEL_CONFIG: ModelConfig = {
 
 const FAST_MAX_TURNS = 15;
 
-// Quiet logger that captures messages for assertions
-function createTestLogger() {
-  const logs: string[] = [];
-  return {
-    logger: {
-      error: (message: string, ...args: any[]) => {
-        logs.push(`ERROR: ${message}`);
-      },
-      info: (message: string, ...args: any[]) => {
-        logs.push(`INFO: ${message}`);
-      },
-      trace: (message: string, ...args: any[]) => {
-        logs.push(`TRACE: ${message}`);
-      },
-    },
-    logs,
-  };
-}
-
 describe("Agent Team Integration Tests", () => {
   describe("Basic Happy Path", () => {
     it("should complete a simple goal with manager and one worker", async () => {
+      const { logger, log } = createTestFileLogger("basic-happy-path");
       const events: string[] = [];
 
       const team = createAgentTeam({
         teamId: "test-001",
         goal: "Write a two-line poem about coding",
         modelConfig: TEST_MODEL_CONFIG,
+        logger,
         manager: {
           id: "Manager#1",
           role: "manager",
@@ -71,36 +55,36 @@ When done, call task_complete with your work.`,
         callbacks: {
           onTaskCreated: (task) => {
             events.push(`task_created:${task.id}`);
-            console.log(`📋 Task created: ${task.id} - ${task.title}`);
+            log(`📋 Task created: ${task.id} - ${task.title}`);
           },
           onTaskActivated: (task) => {
             events.push(`task_activated:${task.id}`);
-            console.log(`▶️  Task activated: ${task.id}`);
+            log(`▶️  Task activated: ${task.id}`);
           },
           onTaskCompleted: (task) => {
             events.push(`task_completed:${task.id}`);
-            console.log(`✅ Task completed: ${task.id}`);
+            log(`✅ Task completed: ${task.id}`);
           },
           onMessageSent: (message) => {
             events.push(`message:${message.from}->${message.to}`);
-            console.log(`💬 Message: ${message.from} → ${message.to}`);
+            log(`💬 Message: ${message.from} → ${message.to}`);
           },
           onGoalComplete: (summary) => {
             events.push("goal_complete");
-            console.log(`🎉 Goal complete!`);
-            console.log(`Summary: ${summary}`);
+            log(`🎉 Goal complete!`);
+            log(`Summary: ${summary}`);
           },
         },
       });
 
-      console.log("\n=== Running team autonomously ===");
+      log("\n=== Running team autonomously ===");
       const result = await team.run();
 
-      console.log(`\nTeam run complete:`);
-      console.log(`  Goal complete: ${result.complete}`);
-      console.log(`  Iterations: ${result.iterations}`);
-      console.log(`  Blocked agents: ${result.blockedAgents.length}`);
-      console.log(`  Events: ${events.join(", ")}`);
+      log(`\nTeam run complete:`);
+      log(`  Goal complete: ${result.complete}`);
+      log(`  Iterations: ${result.iterations}`);
+      log(`  Blocked agents: ${result.blockedAgents.length}`);
+      log(`  Events: ${events.join(", ")}`);
 
       // Verify goal was completed
       assert.ok(result.complete, "Goal should be completed");
@@ -116,17 +100,19 @@ When done, call task_complete with your work.`,
       );
       assert.ok(events.includes("goal_complete"), "Should have completed goal");
 
-      console.log("\n✨ Test passed - goal completed autonomously!");
+      log("\n✨ Test passed - goal completed autonomously!");
     });
   });
 
   describe("Multiple Team Members", () => {
     it("should assign tasks to multiple workers and complete the goal", async () => {
+      const { logger, log } = createTestFileLogger("multiple-team-members");
       const tasksCreated: Task[] = [];
       const tasksCompleted: Task[] = [];
 
       const team = createAgentTeam({
         teamId: "test-multi-worker",
+        logger,
         goal: "Write two haikus: one about the sun and one about the moon",
         modelConfig: TEST_MODEL_CONFIG,
         manager: {
@@ -188,16 +174,18 @@ When all tasks are complete, call task_complete with both haikus in your summary
         "Poet#2 should have been assigned a task",
       );
 
-      console.log("✨ Multi-worker test passed");
+      log("✨ Multi-worker test passed");
     });
   });
 
   describe("Task Queueing", () => {
     it("should queue tasks when a worker already has an active task", async () => {
+      const { logger, log } = createTestFileLogger("task-queueing");
       const taskEvents: string[] = [];
 
       const team = createAgentTeam({
         teamId: "test-queueing",
+        logger,
         goal: "Write three short phrases: one about dogs, one about cats, one about birds",
         modelConfig: TEST_MODEL_CONFIG,
         manager: {
@@ -225,15 +213,15 @@ When all tasks are complete, call task_complete with a summary of all three phra
         callbacks: {
           onTaskCreated: (task) => {
             taskEvents.push(`created:${task.id}:${task.status}`);
-            console.log(`📋 Created ${task.id} status=${task.status}`);
+            log(`📋 Created ${task.id} status=${task.status}`);
           },
           onTaskActivated: (task) => {
             taskEvents.push(`activated:${task.id}`);
-            console.log(`▶️  Activated ${task.id}`);
+            log(`▶️  Activated ${task.id}`);
           },
           onTaskCompleted: (task) => {
             taskEvents.push(`completed:${task.id}`);
-            console.log(`✅ Completed ${task.id}`);
+            log(`✅ Completed ${task.id}`);
           },
         },
       });
@@ -270,17 +258,19 @@ When all tasks are complete, call task_complete with a summary of all three phra
         "Queued tasks should have been activated",
       );
 
-      console.log("✨ Task queueing test passed");
+      log("✨ Task queueing test passed");
     });
   });
 
   describe("External Blocking (BigBoss)", () => {
     it("should block when agent asks BigBoss, resume after reply, and complete", async () => {
+      const { logger, log } = createTestFileLogger("external-blocking-bigboss");
       const blockedEvents: Array<{ agentId: string; messageId: string }> = [];
       const unblockedEvents: string[] = [];
 
       const team = createAgentTeam({
         teamId: "test-bigboss",
+        logger,
         goal: "Get approval from BigBoss before writing a poem, then write it",
         modelConfig: TEST_MODEL_CONFIG,
         manager: {
@@ -304,17 +294,17 @@ When tasks are done, call task_complete with the final result.`,
         callbacks: {
           onAgentBlocked: (agentId, messageId) => {
             blockedEvents.push({ agentId, messageId });
-            console.log(`🔒 Agent ${agentId} blocked on ${messageId}`);
+            log(`🔒 Agent ${agentId} blocked on ${messageId}`);
           },
           onAgentUnblocked: (agentId) => {
             unblockedEvents.push(agentId);
-            console.log(`🔓 Agent ${agentId} unblocked`);
+            log(`🔓 Agent ${agentId} unblocked`);
           },
         },
       });
 
       // First run - should block waiting for BigBoss
-      console.log("\n=== First run (should block on BigBoss) ===");
+      log("\n=== First run (should block on BigBoss) ===");
       const result1 = await team.run();
 
       assert.ok(!result1.complete, "Goal should NOT be complete yet");
@@ -327,12 +317,12 @@ When tasks are done, call task_complete with the final result.`,
         "onAgentBlocked callback should have fired",
       );
 
-      console.log(
+      log(
         `Blocked agent: ${blockedOnBigBoss.agentId}, message: ${blockedOnBigBoss.messageId}`,
       );
 
       // Deliver reply from BigBoss
-      console.log("\n=== Delivering BigBoss reply ===");
+      log("\n=== Delivering BigBoss reply ===");
       team.deliverMessageReply(
         blockedOnBigBoss.messageId,
         "Yes, approved! Write a short poem about nature.",
@@ -344,7 +334,7 @@ When tasks are done, call task_complete with the final result.`,
       );
 
       // Second run - should complete
-      console.log("\n=== Second run (should complete) ===");
+      log("\n=== Second run (should complete) ===");
       const result2 = await team.run();
 
       assert.ok(
@@ -352,16 +342,18 @@ When tasks are done, call task_complete with the final result.`,
         "Goal should be completed after BigBoss reply",
       );
 
-      console.log("✨ External blocking test passed");
+      log("✨ External blocking test passed");
     });
   });
 
   describe("Callbacks", () => {
     it("should fire all lifecycle callbacks in correct order", async () => {
+      const { logger, log } = createTestFileLogger("callbacks-lifecycle");
       const events: Array<{ type: string; data: any }> = [];
 
       const team = createAgentTeam({
         teamId: "test-callbacks",
+        logger,
         goal: "Write a one-sentence story",
         modelConfig: TEST_MODEL_CONFIG,
         manager: {
@@ -425,7 +417,7 @@ When the task is done, call task_complete with the story as your summary.`,
       assert.ok(result.complete, "Goal should complete");
 
       const eventTypes = events.map((e) => e.type);
-      console.log("Event sequence:", eventTypes.join(" → "));
+      log("Event sequence:", eventTypes.join(" → "));
 
       // task_created must come before task_completed for the same task
       const firstCreated = eventTypes.indexOf("task_created");
@@ -488,12 +480,13 @@ When the task is done, call task_complete with the story as your summary.`,
         "Worker should send completion notification to manager",
       );
 
-      console.log("✨ Callbacks test passed");
+      log("✨ Callbacks test passed");
     });
   });
 
   describe("Custom ID Generators", () => {
     it("should use custom generateTaskId and generateMessageId when provided", async () => {
+      const { logger, log } = createTestFileLogger("custom-id-generators");
       const generatedTaskIds: string[] = [];
       const generatedMessageIds: string[] = [];
 
@@ -502,6 +495,7 @@ When the task is done, call task_complete with the story as your summary.`,
 
       const team = createAgentTeam({
         teamId: "test-custom-ids",
+        logger,
         goal: "Write a one-line joke",
         modelConfig: TEST_MODEL_CONFIG,
         manager: {
@@ -532,10 +526,10 @@ When done, call task_complete with the joke.`,
         },
         callbacks: {
           onTaskCreated: (task) => {
-            console.log(`📋 Task ${task.id} created`);
+            log(`📋 Task ${task.id} created`);
           },
           onMessageSent: (message) => {
-            console.log(`💬 Message ${message.id} sent`);
+            log(`💬 Message ${message.id} sent`);
           },
         },
       });
@@ -569,16 +563,16 @@ When done, call task_complete with the joke.`,
         );
       }
 
-      console.log(`Custom task IDs: ${generatedTaskIds.join(", ")}`);
-      console.log(`Custom message IDs: ${generatedMessageIds.join(", ")}`);
-      console.log(`Goal completed: ${result.complete}`);
-      console.log("✨ Custom ID generators test passed");
+      log(`Custom task IDs: ${generatedTaskIds.join(", ")}`);
+      log(`Custom message IDs: ${generatedMessageIds.join(", ")}`);
+      log(`Goal completed: ${result.complete}`);
+      log("✨ Custom ID generators test passed");
     });
   });
 
   describe("deliverMessageReply", () => {
     it("should return undefined and log error for non-existent message ID", async () => {
-      const { logger } = createTestLogger();
+      const { logger, log } = createTestFileLogger("deliver-reply-bad-id");
 
       const team = createAgentTeam({
         teamId: "test-bad-reply",
@@ -603,15 +597,17 @@ When done, call task_complete with the joke.`,
       team.deliverMessageReply("M-9999", "This reply goes nowhere");
 
       // No crash = success
-      console.log("✨ deliverMessageReply with bad ID test passed");
+      log("✨ deliverMessageReply with bad ID test passed");
     });
 
     it("should unblock agent and add reply to conversation history when delivering valid reply", async () => {
+      const { logger, log } = createTestFileLogger("deliver-reply-valid");
       const unblockedAgents: string[] = [];
       const deliveredMessages: TeamMessage[] = [];
 
       const team = createAgentTeam({
         teamId: "test-deliver-reply",
+        logger,
         goal: "Ask BigBoss a question, then summarize the answer",
         modelConfig: TEST_MODEL_CONFIG,
         manager: {
@@ -656,14 +652,16 @@ After you get a reply, call task_complete with a summary that includes BigBoss's
       const result2 = await team.run();
       assert.ok(result2.complete, "Goal should complete after reply delivered");
 
-      console.log("✨ deliverMessageReply valid reply test passed");
+      log("✨ deliverMessageReply valid reply test passed");
     });
   });
 
   describe("stop()", () => {
     it("should stop a running team and return state", async () => {
+      const { logger, log } = createTestFileLogger("stop");
       const team = createAgentTeam({
         teamId: "test-stop",
+        logger,
         goal: "Write 10 different poems about 10 different animals, each at least 4 lines long",
         modelConfig: TEST_MODEL_CONFIG,
         manager: {
@@ -718,17 +716,19 @@ When done, call task_complete with a summary.`,
         "State should have agentStates Map",
       );
 
-      console.log("✨ stop() test passed");
+      log("✨ stop() test passed");
     });
   });
 
   describe("Resume from State", () => {
     it("should resume a team from previously saved state", async () => {
+      const { logger, log } = createTestFileLogger("resume-from-state");
       const tasksCompleted: string[] = [];
 
       // Phase 1: Start a team that will block on BigBoss
       const team1 = createAgentTeam({
         teamId: "test-resume",
+        logger,
         goal: "Get BigBoss approval then write a short greeting",
         modelConfig: TEST_MODEL_CONFIG,
         manager: {
@@ -776,6 +776,7 @@ When done, call task_complete with the greeting.`,
         teamId: "test-resume",
         goal: "Get BigBoss approval then write a short greeting",
         modelConfig: TEST_MODEL_CONFIG,
+        logger,
         manager: {
           id: "Manager#1",
           role: "manager",
@@ -813,16 +814,18 @@ When done, call task_complete with the greeting.`,
         "At least one task should have completed across both phases",
       );
 
-      console.log("✨ Resume from state test passed");
+      log("✨ Resume from state test passed");
     });
   });
 
   describe("Team with No Workers", () => {
     it("should allow manager to complete goal directly without assigning tasks", async () => {
+      const { logger, log } = createTestFileLogger("no-workers-manager-only");
       let goalCompleted = false;
 
       const team = createAgentTeam({
         teamId: "test-manager-only",
+        logger,
         goal: "Say hello world",
         modelConfig: TEST_MODEL_CONFIG,
         manager: {
@@ -850,17 +853,19 @@ You can handle this yourself. Just call task_complete with "Hello World!" as the
         "No agents should be blocked",
       );
 
-      console.log("✨ Manager-only completion test passed");
+      log("✨ Manager-only completion test passed");
     });
   });
 
   describe("Inter-Agent Communication", () => {
     it("should handle worker asking manager a question via ask", async () => {
+      const { logger, log } = createTestFileLogger("inter-agent-communication");
       const messageEvents: Array<{ from: string; to: string; type: string }> =
         [];
 
       const team = createAgentTeam({
         teamId: "test-inter-agent",
+        logger,
         goal: "Have the writer write a haiku about a color chosen by the manager",
         modelConfig: TEST_MODEL_CONFIG,
         manager: {
@@ -894,14 +899,14 @@ Then call task_complete with your haiku.`,
               to: message.to,
               type: message.type,
             });
-            console.log(`💬 ${message.type}: ${message.from} → ${message.to}`);
+            log(`💬 ${message.type}: ${message.from} → ${message.to}`);
           },
         },
       });
 
       const result = await team.run();
 
-      console.log("Message events:", messageEvents);
+      log("Message events:", messageEvents);
 
       assert.ok(result.complete, "Goal should be completed");
 
@@ -924,7 +929,7 @@ Then call task_complete with your haiku.`,
         "Manager should have replied to Writer",
       );
 
-      console.log("✨ Inter-agent communication test passed");
+      log("✨ Inter-agent communication test passed");
     });
   });
 });
