@@ -103,7 +103,9 @@ export function createAgentTeam(config: AgentTeamConfig): AgentTeam {
           question: z.string().describe("Your question"),
         }),
         execute: async (args: { to: string; question: string }) => {
-          const messageId = generateMessageId(state.messages);
+          const messageId = config.generateMessageId
+            ? config.generateMessageId(state.messages)
+            : generateMessageId(state.messages);
           const message: TeamMessage = {
             id: messageId,
             from: agentId,
@@ -146,7 +148,9 @@ export function createAgentTeam(config: AgentTeamConfig): AgentTeam {
           message: string;
           inReplyTo?: string;
         }) => {
-          const messageId = generateMessageId(state.messages);
+          const messageId = config.generateMessageId
+            ? config.generateMessageId(state.messages)
+            : generateMessageId(state.messages);
           const message: TeamMessage = {
             id: messageId,
             from: agentId,
@@ -284,7 +288,9 @@ export function createAgentTeam(config: AgentTeamConfig): AgentTeam {
           }
 
           // Create task
-          const taskId = generateTaskId(state.tasks);
+          const taskId = config.generateTaskId
+            ? config.generateTaskId(state.tasks)
+            : generateTaskId(state.tasks);
           const task: Task = {
             id: taskId,
             title: args.title,
@@ -452,7 +458,9 @@ export function createAgentTeam(config: AgentTeamConfig): AgentTeam {
     agentState.status = "idle";
 
     // Notify task creator
-    const notificationId = generateMessageId(state.messages);
+    const notificationId = config.generateMessageId
+      ? config.generateMessageId(state.messages)
+      : generateMessageId(state.messages);
     const notification: TeamMessage = {
       id: notificationId,
       from: agentId,
@@ -674,7 +682,9 @@ export function createAgentTeam(config: AgentTeamConfig): AgentTeam {
       }
 
       // Create reply message
-      const replyId = generateMessageId(state.messages);
+      const replyId = config.generateMessageId
+        ? config.generateMessageId(state.messages)
+        : generateMessageId(state.messages);
       const reply: TeamMessage = {
         id: replyId,
         from: originalMessage.to,
@@ -753,7 +763,7 @@ export function createAgentTeam(config: AgentTeamConfig): AgentTeam {
       const session = runAgentSession(config.modelConfig, {
         sessionId: agentId,
         systemPrompt: agentConfig.systemPrompt,
-        tools: allTools,
+        tools: allTools as any,
         initialMessages: agentState.conversationHistory,
         initialMessage,
         maxTurns: config.maxTurnsPerSession,

@@ -166,6 +166,12 @@ export interface AgentTeamConfig {
   /** Resume from previous state (optional) */
   resumeFrom?: AgentTeamState;
 
+  /** Optional callback to generate task IDs (for continuous IDs across systems) */
+  generateTaskId?: (existingTasks: Task[]) => string;
+
+  /** Optional callback to generate message IDs (for continuous IDs across systems) */
+  generateMessageId?: (existingMessages: TeamMessage[]) => string;
+
   /** Event callbacks for persistence and monitoring */
   callbacks?: TeamCallbacks;
 
