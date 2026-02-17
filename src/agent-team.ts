@@ -1,7 +1,11 @@
 // Agent team coordinator - manages a team of agents working toward a goal
 
 import { runAgentSession } from "@waterfell/agentic-loop";
-import type { AgentSession, SessionSuspendInfo } from "@waterfell/agentic-loop";
+import type {
+  AgentSession,
+  SessionSuspendInfo,
+  SessionCallbacks,
+} from "@waterfell/agentic-loop";
 import type { Tool } from "ai";
 import { z } from "zod";
 import type {
@@ -912,6 +916,11 @@ export function createAgentTeam(config: AgentTeamConfig): AgentTeam {
     logger.info(`Running agent ${agentId}...`);
 
     try {
+      // Get any extra session callbacks from the factory (e.g. transcript management)
+      const extraCallbacks: SessionCallbacks = config.sessionCallbacksFactory
+        ? await config.sessionCallbacksFactory(agentId)
+        : {};
+
       // Run the agent session (returns AgentSession which is awaitable)
       const session = runAgentSession(config.modelConfig, {
         sessionId: agentId,
@@ -923,15 +932,20 @@ export function createAgentTeam(config: AgentTeamConfig): AgentTeam {
         tokenLimit: config.tokenLimit,
         logger,
         callbacks: {
+          // Pass through all extra callbacks (transcript updates, etc.)
+          ...extraCallbacks,
+          // Internal callbacks that also call through to extra callbacks
           onSuspend: async (sessionId: string, info: SessionSuspendInfo) => {
             const messageId = info.data?.messageId;
             if (messageId) {
               await handleAgentSuspension(agentId, messageId);
             }
+            await extraCallbacks.onSuspend?.(sessionId, info);
           },
           onMessagesUpdate: async (sessionId: string, messages: Message[]) => {
             // Update agent's conversation history
             agentState.conversationHistory = messages;
+            await extraCallbacks.onMessagesUpdate?.(sessionId, messages);
           },
         },
       });

@@ -183,6 +183,16 @@ export interface AgentTeamConfig {
 
   /** Token limit for agent sessions (triggers summarization) */
   tokenLimit?: number;
+
+  /**
+   * Optional factory to create additional session callbacks for each agent run.
+   * Called before each agent session starts. The returned callbacks are merged
+   * with the team's internal callbacks (internal ones always run first).
+   * Use this to wire in transcript management or other per-agent monitoring.
+   */
+  sessionCallbacksFactory?: (
+    agentId: string,
+  ) => Promise<SessionCallbacks> | SessionCallbacks;
 }
 
 /**
