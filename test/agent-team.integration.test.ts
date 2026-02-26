@@ -673,17 +673,18 @@ describe("Agent Team Integration Tests", () => {
       const { logger, log } = createTestFileLogger("resume-from-state");
       const tasksCompleted: string[] = [];
 
+      const goal =
+        "Ask BigBoss for a topic, then have the writer write three sentences about that topic.";
+
       // Phase 1: Start a team that will block on BigBoss
       const team1 = createAgentTeam({
         teamId: "test-resume",
         logger,
-        goal: "Get BigBoss approval then write a short greeting",
+        goal,
         modelConfig: TEST_MODEL_CONFIG,
         manager: {
           id: "Manager#1",
           role: "manager",
-          systemPrompt:
-            "You are a project manager. When the goal requires external approval, ask for it immediately using the ask tool before assigning any work.",
         },
         team: [
           {
@@ -718,9 +719,9 @@ describe("Agent Team Integration Tests", () => {
       // Phase 2: Create a NEW team instance from saved state
       const team2 = createAgentTeam({
         teamId: "test-resume",
-        goal: "Get BigBoss approval then write a short greeting",
-        modelConfig: TEST_MODEL_CONFIG,
         logger,
+        goal,
+        modelConfig: TEST_MODEL_CONFIG,
         manager: {
           id: "Manager#1",
           role: "manager",
@@ -742,7 +743,7 @@ describe("Agent Team Integration Tests", () => {
 
       // Deliver the BigBoss reply on the new instance
       const blockedMessageId = result1.blockedAgents[0].messageId;
-      team2.deliverMessageReply(blockedMessageId, "Yes, approved! Go ahead.");
+      team2.deliverMessageReply(blockedMessageId, "The topic is IPA beers.");
 
       // Run the resumed team to completion
       const result2 = await team2.run();
