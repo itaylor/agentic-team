@@ -1,12 +1,12 @@
 // Agent team coordinator - manages a team of agents working toward a goal
 
-import { runAgentSession } from "@waterfell/agentic-loop";
+import { runAgentSession } from "@itaylor/agentic-loop";
 import type {
   AgentSession,
   SessionSuspendInfo,
   SessionCallbacks,
   Message as LoopMessage,
-} from "@waterfell/agentic-loop";
+} from "@itaylor/agentic-loop";
 import type { Tool } from "ai";
 import { z } from "zod";
 import type {

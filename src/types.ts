@@ -6,7 +6,7 @@ import type {
   ModelConfig,
   Logger,
   SessionCallbacks,
-} from "@waterfell/agentic-loop";
+} from "@itaylor/agentic-loop";
 
 // Re-export types from agentic-loop for convenience
 export type { Message, ModelConfig, Logger, SessionCallbacks };

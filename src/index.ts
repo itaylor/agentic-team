@@ -1,4 +1,4 @@
-// Public API for @waterfell/agentic-team
+// Public API for @itaylor/agentic-team
 
 export { createAgentTeam } from "./agent-team.js";
 

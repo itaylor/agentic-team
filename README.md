@@ -1,10 +1,13 @@
-# @waterfell/agentic-team
+# @itaylor/agentic-team
 
 A library for coordinating teams of AI agents working together toward a shared goal.
 
 ## Overview
 
-`@waterfell/agentic-team` provides coordination primitives for managing a team of AI agents, where a manager agent delegates tasks to team members and coordinates their work. It builds on [@waterfell/agentic-loop](../agentic-loop) to provide multi-agent orchestration with task management, inter-agent communication, and automatic task queueing.
+`@itaylor/agentic-team` provides coordination primitives for managing a team of AI agents, where a manager agent delegates tasks to team members and coordinates their work. It builds on [@itaylor/agentic-loop](../agentic-loop) to provide multi-agent orchestration with task management, inter-agent communication, and automatic task queueing.
+
+## Why does this exist?
+It's my belief that the best Agentic Coding UI may not be the terminal or the IDE, but something else that we haven't seen yet. Whatever that other UI paradigm may be, there's a need to have an agent that oversees the work of other agents, and coordinates their work towards a shared goal.  This is an attempt to implement that pattern that is detached from any particular UI or specific sets of rules/patterns for "development" that we may wish to enforce.
 
 ## Features
 
@@ -19,13 +22,13 @@ A library for coordinating teams of AI agents working together toward a shared g
 ## Installation
 
 ```bash
-npm install @waterfell/agentic-team @waterfell/agentic-loop
+npm install @itaylor/agentic-team @itaylor/agentic-loop
 ```
 
 ## Quick Example
 
 ```typescript
-import { createAgentTeam } from '@waterfell/agentic-team';
+import { createAgentTeam } from '@itaylor/agentic-team';
 
 // Create a team
 const team = createAgentTeam({
@@ -284,7 +287,7 @@ const state = {
 ## Example: Full Workflow
 
 ```typescript
-import { createAgentTeam } from '@waterfell/agentic-team';
+import { createAgentTeam } from '@itaylor/agentic-team';
 
 const team = createAgentTeam({
   teamId: 'feature-auth',

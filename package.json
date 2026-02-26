@@ -1,5 +1,5 @@
 {
-  "name": "@waterfell/agentic-team",
+  "name": "@itaylor/agentic-team",
   "version": "0.1.0",
   "description": "A library for coordinating teams of AI agents working together toward a goal",
   "type": "module",
@@ -29,7 +29,7 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "@waterfell/agentic-loop": "file:../agentic-loop",
+    "@itaylor/agentic-loop": "file:../agentic-loop",
     "zod": "^4.3.5"
   },
   "peerDependencies": {

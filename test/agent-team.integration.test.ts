@@ -1,4 +1,4 @@
-// Integration tests for @waterfell/agentic-team
+// Integration tests for @itaylor/agentic-team
 
 import { describe, it } from "node:test";
 import assert from "node:assert";
