@@ -1,10 +1,14 @@
 {
   "name": "@itaylor/agentic-team",
-  "version": "0.1.0",
+  "version": "0.1.0-pre",
   "description": "A library for coordinating teams of AI agents working together toward a goal",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/itaylor/agentic-team.git"
+  },
   "files": [
     "dist",
     "README.md"
@@ -26,17 +30,11 @@
     "task-management",
     "multi-agent"
   ],
-  "author": "",
+  "author": "itaylor",
   "license": "MIT",
   "dependencies": {
-    "@itaylor/agentic-loop": "file:../agentic-loop",
+    "@itaylor/agentic-loop": "^0.2.2",
     "zod": "^4.3.5"
-  },
-  "peerDependencies": {
-    "@ai-sdk/anthropic": "^3.0.36",
-    "@ai-sdk/openai": "^3.0.25",
-    "ai": "^6.0.0",
-    "ai-sdk-ollama": "^3.0.0"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",

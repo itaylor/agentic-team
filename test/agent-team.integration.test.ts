@@ -12,12 +12,18 @@ import type {
 } from "../src/types.js";
 import { createTestFileLogger } from "./test-helpers.js";
 
-// Use local Ollama for testing
-const TEST_MODEL_CONFIG: ModelConfig = {
-  provider: "ollama",
-  model: "gpt-oss:20b-128k",
-  baseURL: process.env.OLLAMA_BASE_URL || "http://127.0.0.1:11434",
-};
+// Test configuration - uses OpenAI in CI (when OPENAI_API_KEY is set), Ollama locally
+const TEST_MODEL_CONFIG: ModelConfig = process.env.OPENAI_API_KEY
+  ? {
+      provider: "openai",
+      model: "gpt-4.1-nano",
+      apiKey: process.env.OPENAI_API_KEY,
+    }
+  : {
+      provider: "ollama",
+      model: "gpt-oss:20b-128k",
+      baseURL: process.env.OLLAMA_BASE_URL || "http://127.0.0.1:11434",
+    };
 
 const FAST_MAX_TURNS = 15;
 
