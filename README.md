@@ -302,7 +302,6 @@ const team = createAgentTeam({
     { id: 'Alex#1', role: 'frontend_engineer' }
   ]
 });
-```
 
 // Run the team autonomously
 const result = await team.run();
