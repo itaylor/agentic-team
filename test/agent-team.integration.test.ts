@@ -246,7 +246,7 @@ describe("Agent Team Integration Tests", () => {
       const team = createAgentTeam({
         teamId: "test-bigboss",
         logger,
-        goal: "Get approval from BigBoss before writing a poem, then write it",
+        goal: "Ask bigboss for a topic for a poem, then have the writer write a short poem on the topic",
         modelConfig: TEST_MODEL_CONFIG,
         manager: {
           id: "Manager#1",
@@ -293,7 +293,7 @@ describe("Agent Team Integration Tests", () => {
       log("\n=== Delivering BigBoss reply ===");
       team.deliverMessageReply(
         blockedOnBigBoss.messageId,
-        "Yes, approved! Write a short poem about nature.",
+        "Write a poem about boredom",
       );
 
       assert.ok(
