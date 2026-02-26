@@ -7,7 +7,7 @@ A library for coordinating teams of AI agents working together toward a shared g
 `@itaylor/agentic-team` provides coordination primitives for managing a team of AI agents, where a manager agent delegates tasks to team members and coordinates their work. It builds on [@itaylor/agentic-loop](../agentic-loop) to provide multi-agent orchestration with task management, inter-agent communication, and automatic task queueing.
 
 ## Why does this exist?
-It's my belief that the best Agentic Coding UI may not be the terminal or the IDE, but something else that we haven't seen yet. Whatever that other UI paradigm may be, there's a need to have an agent that oversees the work of other agents, and coordinates their work towards a shared goal.  This is an attempt to implement that pattern that is detached from any particular UI or specific sets of rules/patterns for "development" that we may wish to enforce.
+It's my belief that the best Agentic Coding UI may not be the terminal or the IDE, but something else that we haven't seen yet. Whatever that other UI paradigm may be, there's a need to have an agent that oversees the work of other agents, and coordinates their work towards a shared goal.  This is an attempt to implement that pattern that is detached from any particular UI or specific sets of team rules that we may wish to enforce.
 
 ## Features
 
@@ -62,7 +62,6 @@ const team = createAgentTeam({
     onGoalComplete: (summary) => console.log('Goal complete:', summary),
   }
 });
-```
 
 // Run the team autonomously until goal is complete
 const result = await team.run();
