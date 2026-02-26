@@ -16,7 +16,7 @@ import { createTestFileLogger } from "./test-helpers.js";
 const TEST_MODEL_CONFIG: ModelConfig = process.env.OPENAI_API_KEY
   ? {
       provider: "openai",
-      model: "gpt-4.1-nano",
+      model: "gpt-4.1-mini",
       apiKey: process.env.OPENAI_API_KEY,
     }
   : {
