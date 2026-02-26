@@ -19,8 +19,11 @@ export interface TeamMember {
   id: string;
   /** Role label (e.g., "backend_engineer") - just a label, not enforced */
   role: string;
-  /** System prompt for this agent */
-  systemPrompt: string;
+  /**
+   * System prompt for this agent.
+   * Defaults to a generic role-based prompt if not provided.
+   */
+  systemPrompt?: string;
   /** Domain-specific tools available to this agent (coordination tools added automatically) */
   tools?: Record<string, Tool>;
 }

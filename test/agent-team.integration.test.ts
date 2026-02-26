@@ -35,20 +35,11 @@ describe("Agent Team Integration Tests", () => {
         manager: {
           id: "Manager#1",
           role: "manager",
-          systemPrompt: `You are a project manager coordinating a small team.
-Your goal is to complete: "Write a two-line poem about coding"
-
-Break this down into tasks and assign them to your team members using the assign_task tool.
-After you assign all tasks, call wait_for_task_completions to wait for your team to finish.
-When you're told all tasks are complete, call task_complete with a summary.`,
         },
         team: [
           {
             id: "Writer#1",
             role: "writer",
-            systemPrompt: `You are a creative writer.
-When you receive a task assignment, complete it by writing what was requested.
-When done, call task_complete with your work.`,
           },
         ],
         maxTurnsPerSession: FAST_MAX_TURNS,
@@ -118,26 +109,15 @@ When done, call task_complete with your work.`,
         manager: {
           id: "Manager#1",
           role: "manager",
-          systemPrompt: `You are a project manager. Your goal: "Write two haikus: one about the sun and one about the moon"
-
-You have two writers on your team: Poet#1 and Poet#2.
-You MUST assign EXACTLY two tasks:
-1. assign_task to Poet#1: write a haiku about the sun
-2. assign_task to Poet#2: write a haiku about the moon
-
-After assigning both tasks, call wait_for_task_completions.
-When all tasks are complete, call task_complete with both haikus in your summary.`,
         },
         team: [
           {
             id: "Poet#1",
             role: "poet",
-            systemPrompt: `You are a poet. Complete your assigned task by writing what is requested. Then call task_complete with the poem you wrote.`,
           },
           {
             id: "Poet#2",
             role: "poet",
-            systemPrompt: `You are a poet. Complete your assigned task by writing what is requested. Then call task_complete with the poem you wrote.`,
           },
         ],
         maxTurnsPerSession: FAST_MAX_TURNS,
@@ -186,27 +166,16 @@ When all tasks are complete, call task_complete with both haikus in your summary
       const team = createAgentTeam({
         teamId: "test-queueing",
         logger,
-        goal: "Write three short phrases: one about dogs, one about cats, one about birds",
+        goal: "Write three short phrases: one about dogs, one about cats, one about birds.  Make each of them a separate task and assign them to your writer",
         modelConfig: TEST_MODEL_CONFIG,
         manager: {
           id: "Manager#1",
           role: "manager",
-          systemPrompt: `You are a project manager. Your goal: "Write three short phrases about animals"
-
-You have ONE writer: Writer#1.
-You MUST assign exactly 3 tasks to Writer#1 (all to the same person):
-1. assign_task to Writer#1: write a short phrase about dogs
-2. assign_task to Writer#1: write a short phrase about cats
-3. assign_task to Writer#1: write a short phrase about birds
-
-After assigning all 3 tasks, call wait_for_task_completions.
-When all tasks are complete, call task_complete with a summary of all three phrases.`,
         },
         team: [
           {
             id: "Writer#1",
             role: "writer",
-            systemPrompt: `You are a writer. Complete your assigned task with a short phrase. Then call task_complete with your phrase. Keep it to one sentence.`,
           },
         ],
         maxTurnsPerSession: FAST_MAX_TURNS,
@@ -276,18 +245,11 @@ When all tasks are complete, call task_complete with a summary of all three phra
         manager: {
           id: "Manager#1",
           role: "manager",
-          systemPrompt: `You are a project manager. Your goal: "Get approval from BigBoss before writing a poem, then write it"
-
-IMPORTANT: First, you must ask BigBoss for approval by using the ask tool with to="BigBoss" and question="Should we write a poem about nature?". Do this IMMEDIATELY as your first action.
-After you receive the reply from BigBoss, assign a task to Writer#1 to write the poem.
-After assigning, call wait_for_task_completions.
-When tasks are done, call task_complete with the final result.`,
         },
         team: [
           {
             id: "Writer#1",
             role: "writer",
-            systemPrompt: `You are a writer. Complete your assigned task. Then call task_complete with your work.`,
           },
         ],
         maxTurnsPerSession: FAST_MAX_TURNS,
@@ -359,16 +321,11 @@ When tasks are done, call task_complete with the final result.`,
         manager: {
           id: "Manager#1",
           role: "manager",
-          systemPrompt: `You are a project manager.
-Assign exactly one task to Writer#1: "Write a one-sentence story about a robot."
-After assigning, call wait_for_task_completions.
-When the task is done, call task_complete with the story as your summary.`,
         },
         team: [
           {
             id: "Writer#1",
             role: "writer",
-            systemPrompt: `You are a writer. Write exactly what the task asks for in one sentence. Then call task_complete with it.`,
           },
         ],
         maxTurnsPerSession: FAST_MAX_TURNS,
@@ -501,16 +458,11 @@ When the task is done, call task_complete with the story as your summary.`,
         manager: {
           id: "Manager#1",
           role: "manager",
-          systemPrompt: `You are a project manager.
-Assign exactly one task to Writer#1: "Write a one-line joke".
-After assigning, call wait_for_task_completions.
-When done, call task_complete with the joke.`,
         },
         team: [
           {
             id: "Writer#1",
             role: "writer",
-            systemPrompt: `You are a comedy writer. Write a one-line joke as requested. Then call task_complete with it.`,
           },
         ],
         maxTurnsPerSession: FAST_MAX_TURNS,
@@ -582,13 +534,11 @@ When done, call task_complete with the joke.`,
         manager: {
           id: "Manager#1",
           role: "manager",
-          systemPrompt: "You are a manager.",
         },
         team: [
           {
             id: "Worker#1",
             role: "worker",
-            systemPrompt: "You are a worker.",
           },
         ],
       });
@@ -608,14 +558,11 @@ When done, call task_complete with the joke.`,
       const team = createAgentTeam({
         teamId: "test-deliver-reply",
         logger,
-        goal: "Ask BigBoss a question, then summarize the answer",
+        goal: "Ask BigBoss a question with the ask tool, then summarize the answer",
         modelConfig: TEST_MODEL_CONFIG,
         manager: {
           id: "Manager#1",
           role: "manager",
-          systemPrompt: `You are a project manager.
-IMMEDIATELY ask BigBoss a question using the ask tool with to="BigBoss" and question="What color should the logo be?".
-After you get a reply, call task_complete with a summary that includes BigBoss's answer.`,
         },
         team: [],
         maxTurnsPerSession: FAST_MAX_TURNS,
@@ -667,16 +614,11 @@ After you get a reply, call task_complete with a summary that includes BigBoss's
         manager: {
           id: "Manager#1",
           role: "manager",
-          systemPrompt: `You are a project manager. Your goal requires a lot of work.
-Assign a task to Writer#1 to write 10 poems about different animals.
-After assigning, call wait_for_task_completions.
-When done, call task_complete with a summary.`,
         },
         team: [
           {
             id: "Writer#1",
             role: "writer",
-            systemPrompt: `You are a writer. Write exactly what is asked. Take your time and write each poem carefully. Call task_complete when finished.`,
           },
         ],
         maxTurnsPerSession: FAST_MAX_TURNS,
@@ -734,17 +676,13 @@ When done, call task_complete with a summary.`,
         manager: {
           id: "Manager#1",
           role: "manager",
-          systemPrompt: `You are a project manager.
-IMMEDIATELY ask BigBoss for approval using the ask tool with to="BigBoss" and question="Can we proceed with writing a greeting?".
-After you receive the reply, assign a task to Writer#1 to write a short greeting.
-After assigning, call wait_for_task_completions.
-When done, call task_complete with the greeting.`,
+          systemPrompt:
+            "You are a project manager. When the goal requires external approval, ask for it immediately using the ask tool before assigning any work.",
         },
         team: [
           {
             id: "Writer#1",
             role: "writer",
-            systemPrompt: `You are a writer. Write exactly what is asked. Call task_complete with your work.`,
           },
         ],
         maxTurnsPerSession: FAST_MAX_TURNS,
@@ -780,17 +718,11 @@ When done, call task_complete with the greeting.`,
         manager: {
           id: "Manager#1",
           role: "manager",
-          systemPrompt: `You are a project manager.
-IMMEDIATELY ask BigBoss for approval using the ask tool with to="BigBoss" and question="Can we proceed with writing a greeting?".
-After you receive the reply, assign a task to Writer#1 to write a short greeting.
-After assigning, call wait_for_task_completions.
-When done, call task_complete with the greeting.`,
         },
         team: [
           {
             id: "Writer#1",
             role: "writer",
-            systemPrompt: `You are a writer. Write exactly what is asked. Call task_complete with your work.`,
           },
         ],
         maxTurnsPerSession: FAST_MAX_TURNS,
@@ -831,8 +763,6 @@ When done, call task_complete with the greeting.`,
         manager: {
           id: "Manager#1",
           role: "manager",
-          systemPrompt: `You are a project manager. Your goal is simple: "Say hello world".
-You can handle this yourself. Just call task_complete with "Hello World!" as the summary. Do NOT assign any tasks. Do NOT use any other tools. Just call task_complete immediately.`,
         },
         team: [],
         maxTurnsPerSession: FAST_MAX_TURNS,
@@ -866,29 +796,16 @@ You can handle this yourself. Just call task_complete with "Hello World!" as the
       const team = createAgentTeam({
         teamId: "test-inter-agent",
         logger,
-        goal: "Have the writer write a haiku about a color chosen by the manager",
+        goal: "Have Writer#1 write a haiku. Assign them the task but do NOT specify the subject in the brief — instead, instruct them in the brief to ask you (Manager#1) what subject to use.",
         modelConfig: TEST_MODEL_CONFIG,
         manager: {
           id: "Manager#1",
           role: "manager",
-          systemPrompt: `You are a project manager.
-Your goal: Have the writer write a haiku about a color you choose.
-
-Step 1: assign_task to Writer#1 with title "Write a haiku" and brief "Write a haiku about a color. If you are unsure what color, ask Manager#1 using the ask tool. Then call task_complete with your haiku."
-Step 2: After assigning, call wait_for_task_completions.
-
-IMPORTANT: If Writer#1 asks you a question, reply using the tell tool with the answer "blue" and include the inReplyTo field with the message ID.
-
-When all tasks are complete, call task_complete with the haiku as your summary.`,
         },
         team: [
           {
             id: "Writer#1",
             role: "writer",
-            systemPrompt: `You are a writer. Read your task brief carefully.
-You MUST ask Manager#1 what color to use by calling the ask tool with to="Manager#1" and question="What color should the haiku be about?".
-Wait for the reply, then write a haiku about that color.
-Then call task_complete with your haiku.`,
           },
         ],
         maxTurnsPerSession: FAST_MAX_TURNS,

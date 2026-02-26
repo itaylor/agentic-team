@@ -5,6 +5,7 @@ import type {
   AgentSession,
   SessionSuspendInfo,
   SessionCallbacks,
+  Message as LoopMessage,
 } from "@waterfell/agentic-loop";
 import type { Tool } from "ai";
 import { z } from "zod";
@@ -419,6 +420,17 @@ export function createAgentTeam(config: AgentTeamConfig): AgentTeam {
   }
 
   /**
+   * Build the default system prompt for an agent if none is provided
+   */
+  function buildDefaultSystemPrompt(agentId: string): string {
+    if (agentId === config.manager.id) {
+      return "You are a project manager coordinating a team of AI agents.";
+    }
+    const member = config.team.find((m) => m.id === agentId);
+    return `You are a ${member?.role || "team member"} on a collaborative AI team.`;
+  }
+
+  /**
    * Build initial message for an agent based on their state
    */
   function buildInitialMessage(agentId: string): string | undefined {
@@ -427,25 +439,79 @@ export function createAgentTeam(config: AgentTeamConfig): AgentTeam {
       return undefined;
     }
 
+    const isManager = agentId === config.manager.id;
     const parts: string[] = [];
 
-    // If agent has an active task, include the task brief
-    if (agentState.currentTask) {
-      const task = state.tasks.find((t) => t.id === agentState.currentTask);
-      if (task) {
-        parts.push(`# Your Current Task: ${task.title}\n`);
-        parts.push(`Task ID: ${task.id}\n`);
-        parts.push(`\n${task.brief}\n`);
-      }
+    // Manager first-time startup: include goal + standard lifecycle instructions
+    if (isManager && agentState.conversationHistory.length === 0) {
+      const teamList =
+        config.team.length > 0
+          ? config.team.map((m) => `- ${m.id} (${m.role})`).join("\n")
+          : "(no team members — you may complete this goal yourself)";
+
+      parts.push(`# Goal\n${config.goal}`);
+      parts.push(`\n# Your Role as Manager
+You coordinate the team to achieve this goal by breaking it down into tasks and delegating to team members.
+
+## Workflow
+1. Break the goal down into specific, actionable tasks
+2. Assign tasks to team members using \`assign_task\`
+3. After assigning initial work, call \`wait_for_task_completions\` to pause until those tasks complete
+4. Review results and assign follow-up tasks if needed
+5. When the goal is fully achieved, call \`task_complete\` with a comprehensive summary
+
+## Your Team
+${teamList}
+
+Begin by analyzing the goal and assigning tasks to your team.`);
+
+      return parts.join("\n");
     }
 
-    // Include any unread messages
+    // Worker first-time startup: include task brief + standard worker instructions
+    if (!isManager && agentState.conversationHistory.length === 0) {
+      const task = agentState.currentTask
+        ? state.tasks.find((t) => t.id === agentState.currentTask)
+        : undefined;
+
+      if (task) {
+        parts.push(
+          `# Your Assignment\nYou are ${agentId}, a ${agentState.role}.`,
+        );
+        parts.push(
+          `\n## Task: ${task.title}\nTask ID: ${task.id}\n\n${task.brief}`,
+        );
+        parts.push(
+          `\nWhen you complete your task, call \`task_complete\` with a summary of what you accomplished.\nIf you need clarification or help, use the \`ask\` tool.`,
+        );
+      }
+
+      // Include any unread messages (e.g. task notification)
+      const unreadMessages = state.messages.filter(
+        (m) => m.to === agentId && m.status === "pending",
+      );
+      if (unreadMessages.length > 0) {
+        parts.push(`\n# Pending Messages`);
+        for (const msg of unreadMessages) {
+          parts.push(`\nFrom ${msg.from}:`);
+          if (msg.type === "ask") {
+            parts.push(`\n**Question:** ${msg.content}\n`);
+          } else {
+            parts.push(`\n${msg.content}\n`);
+          }
+        }
+      }
+
+      return parts.length > 0 ? parts.join("\n") : undefined;
+    }
+
+    // Re-activation: include pending messages only (agent already has context)
     const unreadMessages = state.messages.filter(
       (m) => m.to === agentId && m.status === "pending",
     );
 
     if (unreadMessages.length > 0) {
-      parts.push(`\n# Pending Messages\n`);
+      parts.push(`# Pending Messages`);
       for (const msg of unreadMessages) {
         parts.push(`\nFrom ${msg.from}:`);
         if (msg.type === "ask") {
@@ -454,14 +520,6 @@ export function createAgentTeam(config: AgentTeamConfig): AgentTeam {
           parts.push(`\n${msg.content}\n`);
         }
       }
-    }
-
-    // If this is the manager and it's their first message, include the goal
-    if (
-      agentId === config.manager.id &&
-      agentState.conversationHistory.length === 0
-    ) {
-      parts.unshift(`# Your Goal\n\n${config.goal}\n`);
     }
 
     return parts.length > 0 ? parts.join("\n") : undefined;
@@ -851,13 +909,8 @@ export function createAgentTeam(config: AgentTeamConfig): AgentTeam {
       ...(agentConfig.tools || {}),
     };
 
-    // Build initial message if this is a fresh session
-    const initialMessage =
-      agentState.conversationHistory.length === 0
-        ? buildInitialMessage(agentId)
-        : undefined;
-
     // For agents with existing history, inject any pending messages into their conversation
+    // (buildInitialMessage handles the fresh-start case including pending messages)
     if (agentState.conversationHistory.length > 0) {
       const pendingMessages = state.messages.filter(
         (m) => m.to === agentId && m.status === "pending",
@@ -909,9 +962,15 @@ export function createAgentTeam(config: AgentTeamConfig): AgentTeam {
         agentState.conversationHistory.push({
           role: "user",
           content: parts.join("\n"),
-        });
+        } as LoopMessage);
       }
     }
+
+    // Build initial message for fresh sessions (includes goal/task context + standard instructions)
+    const initialMessage =
+      agentState.conversationHistory.length === 0
+        ? buildInitialMessage(agentId)
+        : undefined;
 
     logger.info(`Running agent ${agentId}...`);
 
@@ -924,9 +983,10 @@ export function createAgentTeam(config: AgentTeamConfig): AgentTeam {
       // Run the agent session (returns AgentSession which is awaitable)
       const session = runAgentSession(config.modelConfig, {
         sessionId: agentId,
-        systemPrompt: agentConfig.systemPrompt,
+        systemPrompt:
+          agentConfig.systemPrompt || buildDefaultSystemPrompt(agentId),
         tools: allTools as any,
-        initialMessages: agentState.conversationHistory,
+        messages: agentState.conversationHistory,
         initialMessage,
         maxTurns: config.maxTurnsPerSession,
         tokenLimit: config.tokenLimit,

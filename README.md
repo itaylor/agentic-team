@@ -39,18 +39,18 @@ const team = createAgentTeam({
   manager: {
     id: 'Morgan#1',
     role: 'manager',
-    systemPrompt: 'You are a project manager. Break down the goal into tasks and assign them to your team.',
+    // systemPrompt is optional — defaults to a generic manager prompt
+    // The library provides the manager with goal context and workflow instructions automatically
   },
   team: [
     {
       id: 'Bailey#1',
       role: 'backend_engineer',
-      systemPrompt: 'You are a backend engineer. Implement server-side features.',
+      // systemPrompt is optional — defaults to a role-based prompt
     },
     {
       id: 'Alex#1',
       role: 'frontend_engineer',
-      systemPrompt: 'You are a frontend engineer. Build user interfaces.',
     }
   ],
   callbacks: {
@@ -59,6 +59,7 @@ const team = createAgentTeam({
     onGoalComplete: (summary) => console.log('Goal complete:', summary),
   }
 });
+```
 
 // Run the team autonomously until goal is complete
 const result = await team.run();
@@ -74,6 +75,7 @@ console.log('Iterations:', result.iterations);
 - **Manager**: Special agent that assigns tasks and coordinates the team
 - **Team Members**: Agents that execute tasks assigned by the manager
 - Both run using the agentic-loop library with their own system prompts and tools
+- **System prompts are optional** — the library provides sensible defaults. The manager automatically receives goal context and workflow instructions as its first message; workers receive their task brief and standard completion instructions.
 
 ### Tasks
 
@@ -124,12 +126,50 @@ Creates a new agent team coordinator.
   modelConfig: ModelConfig;          // LLM configuration
   manager: ManagerConfig;            // Manager agent configuration
   team: TeamMember[];                // Team member configurations
-  resumeFrom?: AgentTeamState;       // Resume from previous state
+  resumeFrom?: AgentTeamState;       // Resume from previous state (for crash recovery)
   callbacks?: TeamCallbacks;         // Event callbacks for persistence
   logger?: Logger;                   // Custom logger
   maxTurnsPerSession?: number;       // Max turns per agent run (default: 50)
   tokenLimit?: number;               // Token limit for summarization
 }
+```
+
+**TeamMember / ManagerConfig:**
+```typescript
+{
+  id: string;           // Unique agent identifier (e.g. "Bailey#1")
+  role: string;         // Role label (e.g. "backend_engineer")
+  systemPrompt?: string; // Optional — library provides a default if omitted
+  tools?: Record<string, Tool>; // Domain-specific tools (coordination tools added automatically)
+}
+```
+
+If you want to give your agents code editing capabilities (read/write files, search, apply patches, etc.), consider using [agent-mcp](https://github.com/itaylor/agent-mcp) to supply tools via the MCP stdio protocol:
+
+```typescript
+import { Experimental_StdioMCPTransport } from "@ai-sdk/mcp/mcp-stdio";
+import { createMCPClient } from "@ai-sdk/mcp";
+
+const transport = new Experimental_StdioMCPTransport({
+  command: "/path/to/agent-mcp",
+  args: ["/path/to/your/repo"],
+});
+const mcpClient = await createMCPClient({ transport });
+const mcpTools = await mcpClient.tools();
+
+const team = createAgentTeam({
+  // ...
+  team: [
+    {
+      id: "Bailey#1",
+      role: "backend_engineer",
+      tools: mcpTools, // agent-mcp tools merged with built-in coordination tools
+    },
+  ],
+});
+
+await team.run();
+await mcpClient.close();
 ```
 
 **Returns:** `AgentTeam` object
@@ -252,16 +292,15 @@ const team = createAgentTeam({
   modelConfig: { provider: 'anthropic', model: 'claude-3-5-sonnet-20241022', apiKey: '...' },
   manager: {
     id: 'Morgan#1',
-    systemPrompt: `You are an engineering manager.
-Break down the goal into tasks and assign them using assign_task.
-After assigning all tasks, call wait_for_task_completions.
-When all tasks are done, call task_complete with a summary.`
+    role: 'manager',
+    // No systemPrompt needed — the library provides goal context and workflow instructions
   },
   team: [
-    { id: 'Bailey#1', role: 'backend', systemPrompt: '...' },
-    { id: 'Alex#1', role: 'frontend', systemPrompt: '...' }
+    { id: 'Bailey#1', role: 'backend_engineer' },
+    { id: 'Alex#1', role: 'frontend_engineer' }
   ]
 });
+```
 
 // Run the team autonomously
 const result = await team.run();
