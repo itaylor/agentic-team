@@ -18,6 +18,7 @@ const TEST_MODEL_CONFIG: ModelConfig = process.env.OPENAI_API_KEY
       provider: "openai",
       model: "gpt-5-nano",
       apiKey: process.env.OPENAI_API_KEY,
+      providerOptions: { openai: { reasoningEffort: "minimal" } },
     }
   : {
       provider: "ollama",
