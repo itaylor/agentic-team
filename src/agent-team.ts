@@ -981,34 +981,40 @@ Begin by analyzing the goal and assigning tasks to your team.`);
         : {};
 
       // Run the agent session (returns AgentSession which is awaitable)
-      const session = runAgentSession(config.modelConfig, {
-        sessionId: agentId,
-        systemPrompt:
-          agentConfig.systemPrompt || buildDefaultSystemPrompt(agentId),
-        tools: allTools as any,
-        messages: agentState.conversationHistory,
-        initialMessage,
-        maxTurns: config.maxTurnsPerSession,
-        tokenLimit: config.tokenLimit,
-        logger,
-        callbacks: {
-          // Pass through all extra callbacks (transcript updates, etc.)
-          ...extraCallbacks,
-          // Internal callbacks that also call through to extra callbacks
-          onSuspend: async (sessionId: string, info: SessionSuspendInfo) => {
-            const messageId = info.data?.messageId;
-            if (messageId) {
-              await handleAgentSuspension(agentId, messageId);
-            }
-            await extraCallbacks.onSuspend?.(sessionId, info);
-          },
-          onMessagesUpdate: async (sessionId: string, messages: Message[]) => {
-            // Update agent's conversation history
-            agentState.conversationHistory = messages;
-            await extraCallbacks.onMessagesUpdate?.(sessionId, messages);
+      const session = runAgentSession(
+        agentConfig.modelConfig ?? config.modelConfig,
+        {
+          sessionId: agentId,
+          systemPrompt:
+            agentConfig.systemPrompt || buildDefaultSystemPrompt(agentId),
+          tools: allTools as any,
+          messages: agentState.conversationHistory,
+          initialMessage,
+          maxTurns: config.maxTurnsPerSession,
+          tokenLimit: config.tokenLimit,
+          logger,
+          callbacks: {
+            // Pass through all extra callbacks (transcript updates, etc.)
+            ...extraCallbacks,
+            // Internal callbacks that also call through to extra callbacks
+            onSuspend: async (sessionId: string, info: SessionSuspendInfo) => {
+              const messageId = info.data?.messageId;
+              if (messageId) {
+                await handleAgentSuspension(agentId, messageId);
+              }
+              await extraCallbacks.onSuspend?.(sessionId, info);
+            },
+            onMessagesUpdate: async (
+              sessionId: string,
+              messages: Message[],
+            ) => {
+              // Update agent's conversation history
+              agentState.conversationHistory = messages;
+              await extraCallbacks.onMessagesUpdate?.(sessionId, messages);
+            },
           },
         },
-      });
+      );
 
       // Track this session
       activeAgentSessions.add(session);

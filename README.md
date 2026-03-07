@@ -143,6 +143,7 @@ Creates a new agent team coordinator.
   role: string;         // Role label (e.g. "backend_engineer")
   systemPrompt?: string; // Optional — library provides a default if omitted
   tools?: Record<string, Tool>; // Domain-specific tools (coordination tools added automatically)
+  modelConfig?: ModelConfig;    // Optional — overrides the top-level modelConfig for this agent
 }
 ```
 

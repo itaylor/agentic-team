@@ -1,6 +1,6 @@
 {
   "name": "@itaylor/agentic-team",
-  "version": "0.1.1",
+  "version": "0.2.1",
   "description": "A library for coordinating teams of AI agents working together toward a goal",
   "type": "module",
   "main": "dist/index.js",
@@ -30,7 +30,7 @@
     "task-management",
     "multi-agent"
   ],
-  "author": "itaylor",
+  "author": "ian.b.taylor@gmail.com",
   "license": "MIT",
   "dependencies": {
     "@itaylor/agentic-loop": "^0.2.2",

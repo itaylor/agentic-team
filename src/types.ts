@@ -26,6 +26,11 @@ export interface TeamMember {
   systemPrompt?: string;
   /** Domain-specific tools available to this agent (coordination tools added automatically) */
   tools?: Record<string, Tool>;
+  /**
+   * Optional model configuration override for this agent.
+   * If provided, overrides the top-level modelConfig for this agent's sessions.
+   */
+  modelConfig?: ModelConfig;
 }
 
 /**
