@@ -25,19 +25,25 @@ It's my belief that the best Agentic Coding UI may not be the terminal or the ID
 npm install @itaylor/agentic-team @itaylor/agentic-loop
 ```
 
+You'll also need an AI SDK provider package, e.g.:
+
+```bash
+npm install @ai-sdk/anthropic
+# or @ai-sdk/openai, @ai-sdk/google, ai-sdk-ollama, etc.
+```
+
 ## Quick Example
 
 ```typescript
 import { createAgentTeam } from '@itaylor/agentic-team';
+import { anthropic } from '@ai-sdk/anthropic';
 
 // Create a team
 const team = createAgentTeam({
   teamId: 'project-001',
   goal: 'Implement user authentication feature',
   modelConfig: {
-    provider: 'anthropic',
-    model: 'claude-3-5-sonnet-20241022',
-    apiKey: process.env.ANTHROPIC_API_KEY
+    languageModel: anthropic('claude-opus-4-5'),
   },
   manager: {
     id: 'Morgan#1',
@@ -133,6 +139,27 @@ Creates a new agent team coordinator.
   logger?: Logger;                   // Custom logger
   maxTurnsPerSession?: number;       // Max turns per agent run (default: 50)
   tokenLimit?: number;               // Token limit for summarization
+}
+```
+
+**ModelConfig:**
+```typescript
+{
+  languageModel: LanguageModel;                   // Any AI SDK LanguageModelV3 instance
+  languageModelSettings?: LanguageModelSettings;  // Applied to every agent LLM call
+  summaryLanguageModel?: LanguageModel;           // Optional separate model for summarization
+  summaryLanguageModelSettings?: LanguageModelSettings; // Settings for summary model only
+}
+```
+
+When `summaryLanguageModel` is not set, summarization uses `languageModel` + `languageModelSettings`. When it is set, `summaryLanguageModelSettings` is fully independent — no fallback from the main settings.
+
+```typescript
+// Cheap fast model for summarization, expensive model for agent work
+modelConfig: {
+  languageModel: anthropic('claude-opus-4-5'),
+  summaryLanguageModel: anthropic('claude-haiku-4-5'),
+  summaryLanguageModelSettings: { temperature: 0 },
 }
 ```
 
@@ -288,11 +315,12 @@ const state = {
 
 ```typescript
 import { createAgentTeam } from '@itaylor/agentic-team';
+import { anthropic } from '@ai-sdk/anthropic';
 
 const team = createAgentTeam({
   teamId: 'feature-auth',
   goal: 'Implement user authentication with login and signup',
-  modelConfig: { provider: 'anthropic', model: 'claude-3-5-sonnet-20241022', apiKey: '...' },
+  modelConfig: { languageModel: anthropic('claude-opus-4-5') },
   manager: {
     id: 'Morgan#1',
     role: 'manager',

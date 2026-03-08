@@ -11,19 +11,21 @@ import type {
   Logger,
 } from "../src/types.js";
 import { createTestFileLogger } from "./test-helpers.js";
+import { createOpenAI } from "@ai-sdk/openai";
+import { ollama } from "ai-sdk-ollama";
 
 // Test configuration - uses OpenAI in CI (when OPENAI_API_KEY is set), Ollama locally
 const TEST_MODEL_CONFIG: ModelConfig = process.env.OPENAI_API_KEY
   ? {
-      provider: "openai",
-      model: "gpt-5-nano",
-      apiKey: process.env.OPENAI_API_KEY,
-      providerOptions: { openai: { reasoningEffort: "minimal" } },
+      languageModel: createOpenAI({ apiKey: process.env.OPENAI_API_KEY })(
+        "gpt-5-nano",
+      ),
+      languageModelSettings: {
+        providerOptions: { openai: { reasoningEffort: "minimal" } },
+      },
     }
   : {
-      provider: "ollama",
-      model: "gpt-oss:20b-128k",
-      baseURL: process.env.OLLAMA_BASE_URL || "http://127.0.0.1:11434",
+      languageModel: ollama(process.env.OLLAMA_MODEL || "gpt-oss:20b-128k"),
     };
 
 const FAST_MAX_TURNS = 15;
