@@ -96,46 +96,81 @@ export function createAgentTeam(config: AgentTeamConfig): AgentTeam {
     const isManager = agentId === config.manager.id;
 
     const tools: Record<string, Tool> = {
-      ask: {
-        description:
-          "Ask another team member or external entity a question. Your session will pause until they reply.",
-        inputSchema: z.object({
-          to: z
-            .string()
-            .describe(
-              "Who to ask (agent ID like 'Bailey#1' or 'BigBoss' for external)",
-            ),
-          question: z.string().describe("Your question"),
-        }),
-        execute: async (args: { to: string; question: string }) => {
-          const messageId = config.generateMessageId
-            ? config.generateMessageId(state.messages)
-            : generateMessageId(state.messages);
-          const message: TeamMessage = {
-            id: messageId,
-            from: agentId,
-            to: args.to,
-            type: "ask",
-            content: args.question,
-            status: "pending",
-            createdAt: new Date().toISOString(),
-          };
+      ask: isManager
+        ? {
+            description:
+              "Ask an external entity or another team member a question. Your session will pause until they reply.",
+            inputSchema: z.object({
+              to: z
+                .string()
+                .describe(
+                  "Who to ask (either anagent ID like 'Bailey#1' or the name of the external entity)",
+                ),
+              question: z.string().describe("Your question"),
+            }),
+            execute: async (args: { to: string; question: string }) => {
+              const messageId = config.generateMessageId
+                ? config.generateMessageId(state.messages)
+                : generateMessageId(state.messages);
+              const message: TeamMessage = {
+                id: messageId,
+                from: agentId,
+                to: args.to,
+                type: "ask",
+                content: args.question,
+                status: "pending",
+                createdAt: new Date().toISOString(),
+              };
 
-          state.messages.push(message);
-          await config.callbacks?.onMessageSent?.(message);
+              state.messages.push(message);
+              await config.callbacks?.onMessageSent?.(message);
 
-          logger.info(
-            `Agent ${agentId} asked ${args.to}: ${args.question.substring(0, 50)}...`,
-          );
+              logger.info(
+                `Agent ${agentId} asked ${args.to}: ${args.question.substring(0, 50)}...`,
+              );
 
-          // Return suspension signal
-          return {
-            __suspend__: true,
-            reason: "waiting_for_reply",
-            data: { messageId, to: args.to },
-          };
-        },
-      },
+              return {
+                __suspend__: true,
+                reason: "waiting_for_reply",
+                data: { messageId, to: args.to },
+              };
+            },
+          }
+        : {
+            description:
+              "Ask your manager a question. Your session will pause until they reply. All questions must go through your manager — they will escalate to external parties if needed.",
+            inputSchema: z.object({
+              question: z.string().describe("Your question for the manager"),
+            }),
+            execute: async (args: { question: string }) => {
+              const managerId = config.manager.id;
+              const messageId = config.generateMessageId
+                ? config.generateMessageId(state.messages)
+                : generateMessageId(state.messages);
+              const message: TeamMessage = {
+                id: messageId,
+                from: agentId,
+                to: managerId,
+                type: "ask",
+                content: args.question,
+                status: "pending",
+                createdAt: new Date().toISOString(),
+              };
+
+              state.messages.push(message);
+              await config.callbacks?.onMessageSent?.(message);
+
+              logger.info(
+                `Agent ${agentId} asked manager ${managerId}: ${args.question.substring(0, 50)}...`,
+              );
+
+              return {
+                __suspend__: true,
+                reason: "waiting_for_reply",
+                data: { messageId, to: managerId },
+              };
+            },
+          },
 
       tell: {
         description:
@@ -460,6 +495,10 @@ You coordinate the team to achieve this goal by breaking it down into tasks and 
 4. Review results and assign follow-up tasks if needed
 5. When the goal is fully achieved, call \`task_complete\` with a comprehensive summary
 
+## Communication
+- You are the sole point of contact for external entities. Team members cannot ask external parties directly — their questions always route to you.
+- When a team member asks you a question, answer it yourself if you can, or relay it externally using \`ask\` if needed. Then reply to the team member using \`tell\`.
+
 ## Your Team
 ${teamList}
 
@@ -482,7 +521,7 @@ Begin by analyzing the goal and assigning tasks to your team.`);
           `\n## Task: ${task.title}\nTask ID: ${task.id}\n\n${task.brief}`,
         );
         parts.push(
-          `\nWhen you complete your task, call \`task_complete\` with a summary of what you accomplished.\nIf you need clarification or help, use the \`ask\` tool.`,
+          `\nWhen you complete your task, call \`task_complete\` with a summary of what you accomplished.\nIf you need clarification or help, use the \`ask\` tool — your question will go to your manager, who will answer it or escalate it externally.`,
         );
       }
 
@@ -703,23 +742,23 @@ Begin by analyzing the goal and assigning tasks to your team.`);
         iterations++;
         logger.info(`\n=== Iteration ${iterations} ===`);
 
-        // Check for blocked agents (waiting for external input)
+        // Check if the manager is blocked on an external entity — only the manager
+        // can ask externally, so this is the only case that requires external input.
         const blocked = getBlockedAgents();
         if (blocked.length > 0) {
-          const externalBlocked = blocked.filter((b) => {
+          const managerBlock = blocked.find((b) => {
+            if (b.agentId !== config.manager.id) return false;
             const msg = state.messages.find((m) => m.id === b.messageId);
-            return (
-              msg && (msg.to === "BigBoss" || !state.agentStates.has(msg.to))
-            );
+            return msg && !state.agentStates.has(msg.to);
           });
 
-          if (externalBlocked.length > 0) {
+          if (managerBlock) {
             logger.info(
-              `Agents blocked on external input: ${externalBlocked.map((b) => b.agentId).join(", ")}`,
+              `Manager blocked on external input: ${managerBlock.agentId} waiting on ${managerBlock.messageId}`,
             );
             return {
               complete: false,
-              blockedAgents: externalBlocked,
+              blockedAgents: [managerBlock],
               iterations,
             };
           }
@@ -781,11 +820,32 @@ Begin by analyzing the goal and assigning tasks to your team.`);
         for (const work of workItems) {
           if (shouldStop) break;
           logger.info(`Running ${work.agentId} on task ${work.taskId}...`);
-          await runAgent(work.agentId);
+          const workerResult = await runAgent(work.agentId);
 
           // Check if goal completed
           if (state.goalComplete) {
             break;
+          }
+
+          // If the worker suspended waiting for the manager, wake the manager
+          // immediately so it can handle the question before the next iteration.
+          if (
+            workerResult.suspended &&
+            workerResult.suspendInfo?.reason === "waiting_for_reply"
+          ) {
+            const blockedMsgId = workerResult.suspendInfo.data?.messageId;
+            const blockedMsg = blockedMsgId
+              ? state.messages.find((m) => m.id === blockedMsgId)
+              : undefined;
+            if (blockedMsg && blockedMsg.to === config.manager.id) {
+              const managerState = state.agentStates.get(config.manager.id);
+              if (managerState && managerState.status !== "blocked") {
+                logger.info(
+                  `Worker ${work.agentId} asked manager a question — waking manager to handle it...`,
+                );
+                await runAgent(config.manager.id);
+              }
+            }
           }
         }
 

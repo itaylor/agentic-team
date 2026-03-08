@@ -97,10 +97,12 @@ Agents work on one task at a time. Additional tasks are queued automatically.
 ### Messages
 
 Agents communicate via `ask` and `tell`:
-- **ask**: Sends a question and suspends the agent until reply arrives
+- **ask**: Sends a question and suspends the agent until reply arrives. Workers can only ask their manager; the manager can ask anyone (including external entities).
 - **tell**: Sends a message or reply to a question
 
 When an agent calls `ask`, their session suspends (using agentic-loop's suspension mechanism). When a reply is delivered, the agent can be resumed.
+
+The manager is the sole gateway for external communication. When a worker needs information from an outside party, it asks the manager, who then decides whether to answer from its own knowledge or relay the question externally via `ask`. This keeps the manager fully informed and prevents workers from independently contacting external entities.
 
 The manager can also suspend by calling `wait_for_task_completions()` after assigning work. This prevents the manager from looping unnecessarily while waiting for team members to finish. The manager automatically resumes when task completion notifications arrive.
 
@@ -116,7 +118,7 @@ The manager can also suspend by calling `wait_for_task_completions()` after assi
 
 **Team Member Tools:**
 - `get_task_brief()` - Re-read current task details
-- `ask(to, question)` - Ask for help (suspends)
+- `ask(question)` - Ask the manager a question (suspends; manager answers or escalates externally)
 - `tell(to, message, inReplyTo?)` - Send message
 - `task_complete(summary)` - Complete current task (built-in from agentic-loop)
 

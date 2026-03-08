@@ -249,7 +249,7 @@ describe("Agent Team Integration Tests", () => {
       const team = createAgentTeam({
         teamId: "test-bigboss",
         logger,
-        goal: "Ask bigboss for a topic for a poem, then have the writer write a short poem on the topic",
+        goal: "Ask BigBoss for a topic for a poem, then assign the writing to Writer#1 who will write a short poem on that topic",
         modelConfig: TEST_MODEL_CONFIG,
         manager: {
           id: "Manager#1",
@@ -283,6 +283,11 @@ describe("Agent Team Integration Tests", () => {
 
       const blockedOnBigBoss = result1.blockedAgents[0];
       assert.ok(blockedOnBigBoss, "Should have a blocked agent");
+      assert.strictEqual(
+        blockedOnBigBoss.agentId,
+        "Manager#1",
+        "It should be the manager blocked on BigBoss, not a worker",
+      );
       assert.ok(
         blockedEvents.length > 0,
         "onAgentBlocked callback should have fired",
