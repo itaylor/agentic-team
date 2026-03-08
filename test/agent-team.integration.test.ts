@@ -18,7 +18,7 @@ import { ollama } from "ai-sdk-ollama";
 const TEST_MODEL_CONFIG: ModelConfig = process.env.OPENAI_API_KEY
   ? {
       languageModel: createOpenAI({ apiKey: process.env.OPENAI_API_KEY })(
-        "gpt-5-nano",
+        "gpt-5-mini",
       ),
       languageModelSettings: {
         providerOptions: { openai: { reasoningEffort: "minimal" } },
