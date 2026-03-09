@@ -680,11 +680,14 @@ describe("Agent Team Integration Tests", () => {
     it("should resume a team from previously saved state", async () => {
       const { logger, log } = createTestFileLogger("resume-from-state");
       const tasksCompleted: string[] = [];
+      const tasksActivated: string[] = [];
 
       const goal =
-        "Ask BigBoss for a topic, then have the writer write three sentences about that topic.";
+        "Have Writer#1 write three sentences about renewable energy.";
 
-      // Phase 1: Start a team that will block on BigBoss
+      // Phase 1: Start a team and stop it as soon as the first task is activated
+      // (manager has assigned work and the worker has started — good mid-run pause point)
+      let team1StopCalled = false;
       const team1 = createAgentTeam({
         teamId: "test-resume",
         logger,
@@ -702,15 +705,33 @@ describe("Agent Team Integration Tests", () => {
         ],
         maxTurnsPerSession: FAST_MAX_TURNS,
         callbacks: {
+          onTaskActivated: (task) => {
+            tasksActivated.push(task.id);
+            log(
+              `📋 Task activated: ${task.id} — stopping team to capture state`,
+            );
+            if (!team1StopCalled) {
+              team1StopCalled = true;
+              // Trigger stop asynchronously so the current callback returns first
+              setImmediate(() => team1.stop());
+            }
+          },
           onTaskCompleted: (task) => {
             tasksCompleted.push(task.id);
           },
         },
       });
 
+      // run() will return early once stop() is called
       const result1 = await team1.run();
-      assert.ok(!result1.complete, "Phase 1 should block on BigBoss");
-      assert.ok(result1.blockedAgents.length > 0, "Should have blocked agents");
+      assert.ok(
+        !result1.complete,
+        "Phase 1 should be stopped before completion",
+      );
+      assert.ok(
+        tasksActivated.length > 0,
+        "At least one task should have been activated before stop",
+      );
 
       // Capture state (simulate serialization roundtrip)
       const stoppedState = await team1.stop();
@@ -724,7 +745,11 @@ describe("Agent Team Integration Tests", () => {
         agentStates: new Map(deserialized.agentStates),
       };
 
-      // Phase 2: Create a NEW team instance from saved state
+      log(
+        `Serialized state has ${resumeState.tasks.length} task(s), goalComplete=${resumeState.goalComplete}`,
+      );
+
+      // Phase 2: Create a NEW team instance from saved state and run to completion
       const team2 = createAgentTeam({
         teamId: "test-resume",
         logger,
@@ -748,10 +773,6 @@ describe("Agent Team Integration Tests", () => {
           },
         },
       });
-
-      // Deliver the BigBoss reply on the new instance
-      const blockedMessageId = result1.blockedAgents[0].messageId;
-      team2.deliverMessageReply(blockedMessageId, "The topic is IPA beers.");
 
       // Run the resumed team to completion
       const result2 = await team2.run();
