@@ -197,7 +197,7 @@ export function createAgentTeam(config: AgentTeamConfig): AgentTeam {
             to: args.to,
             type: "tell",
             content: args.message,
-            status: "delivered",
+            status: "pending",
             createdAt: new Date().toISOString(),
             inReplyTo: args.inReplyTo,
           };
@@ -247,7 +247,8 @@ export function createAgentTeam(config: AgentTeamConfig): AgentTeam {
               askerState.status = askerState.currentTask ? "working" : "idle";
               askerState.blockedOn = undefined;
 
-              // Add the reply to their conversation history so they see it when resumed
+              // Deliver immediately into conversation history — agent is mid-session
+              message.status = "delivered";
               askerState.conversationHistory.push({
                 role: "user",
                 content: `Reply to your question from ${agentId}:\n\n${args.message}`,
@@ -258,6 +259,8 @@ export function createAgentTeam(config: AgentTeamConfig): AgentTeam {
                 `Agent ${originalAsk.from} unblocked by reply from ${agentId} to ${originalAsk.id}`,
               );
             }
+            // If originalAsk exists but agent isn't currently blocked (race condition or
+            // already resumed), still mark the tell as pending so it gets injected on next run
           }
 
           await config.callbacks?.onMessageSent?.(message);
@@ -489,20 +492,30 @@ export function createAgentTeam(config: AgentTeamConfig): AgentTeam {
 You coordinate the team to achieve this goal by breaking it down into tasks and delegating to team members.
 
 ## Workflow
-1. Break the goal down into specific, actionable tasks
-2. Assign tasks to team members using \`assign_task\`
+1. If the goal explicitly requires input from an external party before work can begin (e.g. "ask BigBoss for X"), gather that first using \`ask\`. Otherwise, proceed directly to assigning tasks — do not ask for clarification that isn't called for.
+2. Break the goal into specific, actionable tasks and assign them using \`assign_task\`
 3. After assigning initial work, call \`wait_for_task_completions\` to pause until those tasks complete
 4. Review results and assign follow-up tasks if needed
 5. When the goal is fully achieved, call \`task_complete\` with a comprehensive summary
 
+## Task Assignment
+- Only assign a task when you have all the information the agent needs to execute it. Do not assign tasks that depend on answers you haven't received yet.
+- Write briefs that are complete and self-contained. The agent will only see the brief — not the overall goal, not your conversation history, not any external replies you have received. Include everything they need directly in the brief.
+- Never instruct an agent to contact external parties or ask BigBoss for something. You are the sole external contact. If you need information from outside, get it yourself first, then include it in the brief.
+
 ## Communication
 - You are the sole point of contact for external entities. Team members cannot ask external parties directly — their questions always route to you.
-- When a team member asks you a question, answer it yourself if you can, or relay it externally using \`ask\` if needed. Then reply to the team member using \`tell\`.
+- When a team member asks you a question, you MUST have the actual answer before replying. Either answer from your own knowledge, or use \`ask\` to get the answer from an external party first — your session will suspend until the reply arrives. Only then reply to the team member using \`tell\` with the real answer.
+- NEVER reply to a team member with a placeholder, a promise to follow up, or a fallback suggestion. Wait until you have the answer, then reply with it.
+
+## Completing the Goal
+- Only call \`task_complete\` when the goal is genuinely and fully achieved — all required work is done and deliverables exist.
+- Do not call \`task_complete\` merely because you have finished coordinating or assigning tasks. The goal is complete when the *results* are in hand, not when the plan is in motion.
 
 ## Your Team
 ${teamList}
 
-Begin by analyzing the goal and assigning tasks to your team.`);
+Begin by analyzing the goal. If the goal explicitly requires external input before work can begin, gather it first using \`ask\`. Otherwise, assign tasks to your team immediately.`);
 
       return parts.join("\n");
     }
@@ -538,6 +551,8 @@ Begin by analyzing the goal and assigning tasks to your team.`);
           } else {
             parts.push(`\n${msg.content}\n`);
           }
+          msg.status = "delivered";
+          config.callbacks?.onMessageDelivered?.(msg);
         }
       }
 
@@ -558,6 +573,8 @@ Begin by analyzing the goal and assigning tasks to your team.`);
         } else {
           parts.push(`\n${msg.content}\n`);
         }
+        msg.status = "delivered";
+        config.callbacks?.onMessageDelivered?.(msg);
       }
     }
 

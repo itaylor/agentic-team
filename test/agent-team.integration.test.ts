@@ -249,7 +249,7 @@ describe("Agent Team Integration Tests", () => {
       const team = createAgentTeam({
         teamId: "test-bigboss",
         logger,
-        goal: "Ask BigBoss for a topic for a poem, then assign the writing to Writer#1 who will write a short poem on that topic",
+        goal: "Ask BigBoss for a topic for a poem. Once you have the topic from BigBoss, assign the writing to Writer#1 who will write a short poem on that topic.",
         modelConfig: TEST_MODEL_CONFIG,
         manager: {
           id: "Manager#1",
